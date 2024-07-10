@@ -63,7 +63,7 @@ public:
      */
     void calculate(float32_t v_grid);
 
-    SogiPllParams params; ///< Parameters for the SOGI-PLL system.
+    SogiPllParams _params; ///< Parameters for the SOGI-PLL system.
 
     /**
      * @brief Initializes the SOGI parameters.
@@ -83,6 +83,8 @@ public:
      * @return Clarke transformation result of the input signal.
      */
     clarke_t sogi_calc(float32_t input, float32_t w0, SogiParams &params);
+
+    clarke_t _sogi_calc(float32_t input);
 
 private:
 

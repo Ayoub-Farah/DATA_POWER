@@ -29,12 +29,12 @@
 #include "power_ac1phase.h"
 
 // Constructor for PowerAC1Phase
-PowerAC1Phase::PowerAC1Phase() : w0(0.0F) {}
+PowerAC1Phase::PowerAC1Phase() : _w0(0.0F) {}
 
 // Initialization function for PowerAC1Phase
 int8_t PowerAC1Phase::init(PowerAC1PhaseParams params) {
     float32_t rise_time = 1.0F * 2.0F * PI / params.w0;
-    this->w0 = params.w0;
+    _w0 = params.w0;
 
     // Initialize SOGI-PLL for voltage
     sogi_pll.init(params.grid_voltage, params.w0, rise_time, params.Ts);
@@ -61,17 +61,17 @@ PowerAC1PhaseOutput PowerAC1Phase::calculate(float32_t v, float32_t i) {
     sogi_pll.calculate(v);
 
     // Perform SOGI calculation for current
-    clarke_t Iab = sogi_pll.sogi_calc(i, w0, sogi_i_params);
+    clarke_t Iab = sogi_pll.sogi_calc(i, _w0, sogi_i_params);
 
     // Transform current from alpha-beta to d-q
-    dqo_t Idq = Transform::rotation_to_dqo(Iab, sogi_pll.params.theta);
+    dqo_t Idq = Transform::rotation_to_dqo(Iab, sogi_pll._params.theta);
 
     // Save internal states
     _Iab = Iab;
     _Idq = Idq;
-    _Vdq = sogi_pll.params.Vdq;
-    _Vab = sogi_pll.params.Vab;
-    _w = sogi_pll.params.w;
+    _Vdq = sogi_pll._params.Vdq;
+    _Vab = sogi_pll._params.Vab;
+    _w = sogi_pll._params.w;
 
     // Calculate active and reactive power
     power.p = 0.5F * (_Vdq.d * _Idq.d + _Vdq.q * _Idq.q);
@@ -98,10 +98,10 @@ dqo_t PowerAC1Phase::getIdq(){
 }
 
 float32_t PowerAC1Phase::getTheta(){
-    return sogi_pll.params.theta;
+    return sogi_pll._params.theta;
 }
 
 
 float32_t PowerAC1Phase::getw(){
-    return sogi_pll.params.w;
+    return sogi_pll._params.w;
 }
