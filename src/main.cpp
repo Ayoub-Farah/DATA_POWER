@@ -37,11 +37,11 @@
 // from control library
 #include "trigo.h"
 #include "filters.h"
-#include "power_ac1phase.h"
+// #include "power_ac1phase.h"
 #include "ScopeMimicry.h"
 #include "control_factory.h"
 #include "zephyr/console/console.h"
-// #include "singlePhaseInverter.h"
+#include "singlePhaseInverter.h"
 
 #define DUTY_MIN 0.1F
 #define DUTY_MAX 0.9F
@@ -72,10 +72,13 @@ static float32_t V_high_filt; // [V]
 
 static float meas_data; // temp storage meas value (ctrl task)
 
-static PowerAC1PhaseOutput pq_power;
-static PowerAC1PhaseParams ac_meas_config;
-static PowerAC1Phase inverter;
+// static PowerAC1PhaseOutput pq_power;
+// static PowerAC1PhaseParams ac_meas_config;
+// static PowerAC1Phase inverter;
 
+static singlePhaseInverter inverter;
+
+static dqo_t power;
 
 static float32_t Vnet;
 static float32_t virtual_Vgrid_amplitude = 18.0F;
@@ -212,8 +215,8 @@ void setup_routine()
     scope.connectChannel(V2_low_value, "V2_low_value");
     scope.connectChannel(V_high_filt, "V_high_filt");
     scope.connectChannel(duty_cycle, "duty_cycle");
-    scope.connectChannel(pq_power.p, "power_p");
-    scope.connectChannel(pq_power.q, "power_q");
+    scope.connectChannel(power.d, "power_p");
+    scope.connectChannel(power.q, "power_q");
     scope.connectChannel(Vq_net, "Vq_net");
     scope.connectChannel(Vnet, "Vnet");
 	scope.connectChannel(Vond, "Vond");
@@ -232,11 +235,11 @@ void setup_routine()
 
     // PR initialisation.
 
-    ac_meas_config.grid_voltage = 10.0;
-    ac_meas_config.w0 = w0;
-    ac_meas_config.Ts = Ts;
+    // ac_meas_config.grid_voltage = 10.0;
+    // ac_meas_config.w0 = w0;
+    // ac_meas_config.Ts = Ts;
 
-    inverter.init(ac_meas_config);
+    inverter.init(10.0, w0, Ts);
 
     // power_ac1phase_init(&ac_meas_config, 10.0, 2.0*PI*50.0, Ts);
 	pi_current_d.reset();
@@ -354,8 +357,8 @@ switch (mode) {
             printk("% 7.3f:", (double)I1_low_value);
             printk("% 7.3f:", (double)I2_low_value);
             printk("% 7.3f:", (double)V1_low_value);
-            printk("%7.3f:", (double)pq_power.p);
-            printk("%7.3f:", (double)pq_power.q);
+            printk("%7.3f:", (double)power.d);
+            printk("%7.3f:", (double)power.q);
 			printk("%7.3f:", (double)Iq_ref);
             printk("\n");
         } else {
@@ -369,8 +372,8 @@ switch (mode) {
 	    printk("% 6.2f:", (double)Vgrid_amplitude_ref);
 	    printk("% 6.2f:", (double)Vgrid_amplitude);
 	    printk("% 6.2f:", (double)V1_low_value);
-	    printk("%7.3f:", (double)pq_power.p);
-	    printk("%7.3f:", (double)pq_power.q);
+	    printk("%7.3f:", (double)power.d);
+	    printk("%7.3f:", (double)power.q);
 		printk("%7.3f:", (double)Iq_ref);
 		printk("%7.3f:", (double)Vdq.d);
 		printk("%7.3f:", (double)Vdq.q);
@@ -451,7 +454,7 @@ void loop_critical_task()
 		// trigger = true;
         angle = ot_modulo_2pi(angle + w0 * Ts);
 		Vnet = virtual_Vgrid_amplitude * ot_sin(angle);
-        pq_power = inverter.calculate(Vnet, I1_low_value);
+        inverter.calculatePower(Vnet, I1_low_value);
         Vq_net = inverter.getVdq().q;
         Vab = inverter.getVab();
         omega = inverter.getw();
