@@ -161,6 +161,7 @@ void dump_scope_datas(ScopeMimicry &scope)  {
 
     uint16_t segment_size = 1000;
     uint16_t nb_data_dumped = 0;
+    task.suspendBackgroundMs(1000);
     printk("begin record\n");
     printk("#");
     for (uint16_t k=0;k < scope.get_nb_channel(); k++) {
@@ -170,10 +171,10 @@ void dump_scope_datas(ScopeMimicry &scope)  {
     printk("# %d\n", scope.get_final_idx());
     
     
+    
     for (uint16_t k=0;k < buffer_size; k++) {
         printk("%08x\n", *((uint32_t *)buffer_scope));  
         buffer_scope += sizeof(uint32_t);
-        // task.suspendBackgroundMs(50);
         task.suspendBackgroundUs(100);
         
     }
@@ -211,7 +212,8 @@ void setup_routine()
     scope.connectChannel(V_testleg_2, "V_testleg_2");
     scope.connectChannel(V_testleg_3, "V_testleg_3");
     scope.connectChannel(V_testleg_4, "V_testleg_4");
-    scope.connectChannel(V_testleg_5, "V_testleg_5");
+    // scope.connectChannel(V_testleg_5, "V_testleg_5");
+    scope.connectChannel(I_high_value, "I_high");
     scope.connectChannel(duty_cycle, "duty_cycle");
     scope.connectChannel(V_high_value, "V_high");
     scope.connectChannel(trig_ratio, "trig_ratio");
