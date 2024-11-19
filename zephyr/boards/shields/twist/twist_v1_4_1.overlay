@@ -23,7 +23,7 @@
             default-adc-decim = <1>;
             default-edge-trigger = "EdgeTrigger_up";
             default-dead-time = <100 100>;
-            default-modulation = "UpDwn";
+            default-modulation = "Lft_aligned";
             default-phase-shift = <0>;
 			status = "okay";
         };
@@ -39,7 +39,7 @@
             default-adc-decim = <1>;
             default-edge-trigger = "EdgeTrigger_up";
             default-dead-time = <100 100>;
-            default-modulation = "UpDwn";
+            default-modulation = "Lft_aligned";
             default-phase-shift = <0>;
 			status = "okay";
         };
