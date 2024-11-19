@@ -36,6 +36,9 @@
 
 #define RECORD_SIZE 128 // Number of point to record
 
+#define PHASE_GPIO 9
+#define PWM_GPIO 10
+
 
 //--------------SETUP FUNCTIONS DECLARATION-------------------
 void setup_routine(); // Setups the hardware and software of the system
@@ -79,6 +82,9 @@ int16_t phase_shift_min = 0;
 uint16_t dead_time_max = 2000;
 uint16_t dead_time_min = 100;
 
+uint8_t phase_gpio_counter = 0;
+uint8_t pwm_gpio_counter = 0;
+
 int8_t AppTask_num, CommTask_num;
 
 static float32_t acquisition_moment = 0.06;
@@ -86,6 +92,9 @@ static float32_t acquisition_moment = 0.06;
 static float meas_data; // temp storage meas value (ctrl task)
 
 float32_t starting_duty_cycle = 0.1;
+
+static float32_t duty_cycle_old = 0.1;
+static float32_t duty_cycle_new = 0.1;
 
 static float32_t kp = 0.000215;
 static float32_t Ti = 7.5175e-5;
@@ -113,6 +122,8 @@ static Pid pid3;
 
 static uint32_t counter = 0;
 static uint32_t temp_meas_internal = 10;
+static int16_t phase_shift_old;
+static int16_t phase_shift_new;
 
 static float32_t local_analog_value=0;
 
@@ -122,6 +133,9 @@ void setup_routine()
 {
     shield.power.initBuck(LEG1);
     shield.power.initBuck(LEG2);
+
+    spin.gpio.configurePin(PHASE_GPIO,OUTPUT);
+    spin.gpio.configurePin(PWM_GPIO,OUTPUT);
 
 #ifdef CONFIG_SHIELD_OWNVERTER
     shield.power.initBuck(LEG3);
@@ -305,6 +319,22 @@ void loop_control_task()
             break;
 
         case POWER_ON:     // POWER_ON mode turns the power ON
+            phase_shift_new = power_leg_settings[LEG2].phase_shift;
+
+            if(phase_gpio_counter>0) {
+                phase_gpio_counter++;             // counts until we reach a certain number
+                if(phase_gpio_counter>21) {
+                    phase_gpio_counter=0;  //sets the counter to zero and stops counting
+                    spin.gpio.resetPin(PHASE_GPIO);
+                }
+            }
+
+            if( phase_shift_new != phase_shift_old){
+                spin.gpio.setPin(PHASE_GPIO);
+                phase_gpio_counter++;             // counts until we reach a certain number
+            } 
+
+            phase_shift_old = phase_shift_new;
 
             //Tests if the legs were turned off and does it only once ]
             if(!pwm_enable_leg_1 && power_leg_settings[LEG1].settings[BOOL_LEG]) {shield.power.start(LEG1); pwm_enable_leg_1 = true;}
@@ -339,6 +369,8 @@ void loop_control_task()
 
 
             if(power_leg_settings[LEG1].settings[BOOL_LEG]){
+
+
                 if(power_leg_settings[LEG1].settings[BOOL_BOOST]){
                     shield.power.setDutyCycle(LEG1, (1-power_leg_settings[LEG1].duty_cycle) ); //inverses the convention of the leg in case of changing from buck to boost
                 } else {
@@ -347,11 +379,32 @@ void loop_control_task()
             }
 
             if(power_leg_settings[LEG2].settings[BOOL_LEG]){
+
+                duty_cycle_new = power_leg_settings[LEG2].duty_cycle;
+
+                if(pwm_gpio_counter>0) {
+                    pwm_gpio_counter++;             // counts until we reach a certain number
+                    if(pwm_gpio_counter>21) {
+                        spin.gpio.resetPin(PWM_GPIO);
+                        pwm_gpio_counter =0 ; //sets the counter to zero and stops counting
+                    }
+                }
+
+                if(duty_cycle_new != duty_cycle_old){
+                    spin.gpio.setPin(PWM_GPIO);
+                    pwm_gpio_counter++;             // turns the gpio on
+                } 
+
+                duty_cycle_old = duty_cycle_new;
+
                 if(power_leg_settings[LEG2].settings[BOOL_BOOST]){
                     shield.power.setDutyCycle(LEG2, (1-power_leg_settings[LEG2].duty_cycle) ); //inverses the convention of the leg in case of changing from buck to boost
                 }else{
                     shield.power.setDutyCycle(LEG2, power_leg_settings[LEG2].duty_cycle); //uses the normal convention by default
                 }
+
+
+
             }
 
 #ifdef CONFIG_SHIELD_OWNVERTER
