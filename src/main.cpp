@@ -37,7 +37,7 @@
 #define RECORD_SIZE 128 // Number of point to record
 
 #define PHASE_GPIO 9
-#define PWM_GPIO 10
+#define PWM_GPIO 9
 
 
 //--------------SETUP FUNCTIONS DECLARATION-------------------
@@ -135,7 +135,7 @@ void setup_routine()
     shield.power.initBuck(LEG2);
 
     spin.gpio.configurePin(PHASE_GPIO,OUTPUT);
-    spin.gpio.configurePin(PWM_GPIO,OUTPUT);
+    // spin.gpio.configurePin(PWM_GPIO,OUTPUT);
 
 #ifdef CONFIG_SHIELD_OWNVERTER
     shield.power.initBuck(LEG3);
