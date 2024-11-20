@@ -97,15 +97,60 @@ try:
   message = Shield.sendCommand("DUTY","LEG1",0.5)
   print(message)
 
-  message = Shield.sendCommand("DUTY","LEG2",0.5)
+  message = Shield.sendCommand("DUTY","LEG2",0.50001)
   print(message)
 
-  for dead_time_value in range(100, 300, 50):  
-      # message1 = Shield.sendCommand("DEAD_TIME_RISING", "LEG1", dead_time_value)
-      # message1 = Shield.sendCommand("DEAD_TIME_FALLING", "LEG1", dead_time_value)
-      message1 = Shield.sendCommand("DEAD_TIME_RISING", "LEG2", dead_time_value)
-      message1 = Shield.sendCommand("DEAD_TIME_FALLING", "LEG2", dead_time_value)
-      print(f"Sent command with phase shift: {dead_time_value}, message: {message1}")
+  # duty_cycle = 0.5  # Initial duty cycle value
+
+  # while True:
+  #   print(f"Current duty cycle: {duty_cycle:.5f}")
+  #   user_input = input("Press 'u' to increase, 'd' to decrease, or 'q' to quit: ").lower()
+
+  #   if user_input == 'u':
+  #       duty_cycle += 0.00001  # Increment duty cycle
+  #   elif user_input == 'd':
+  #       duty_cycle -= 0.00001  # Decrement duty cycle
+  #   elif user_input == 'q':
+  #       print("Exiting duty cycle adjustment.")
+  #       break
+  #   else:
+  #       print("Invalid input. Please press 'u', 'd', or 'q'.")
+  #       continue
+
+  #   # Ensure duty cycle stays within valid range (0.0 to 1.0)
+  #   duty_cycle = max(0.0, min(1.0, duty_cycle))
+
+  #   # Send updated duty cycle to the Shield
+  #   message = Shield.sendCommand("DUTY", "LEG2", duty_cycle)
+  #   print(f"Message: {message}")
+
+  # user_input = input("Press enter to continue")
+
+
+  for duty_cycle in np.arange(0.5, 0.7, 0.1):   # Example values from 0 to 170 with a step of 10
+    message = Shield.sendCommand("DUTY","LEG2",duty_cycle)
+    print(f"Sent command with frequency: {duty_cycle}, message: {message1}")
+
+  # for duty_cycle in np.arange(0.51, 0.5, -0.0001):   # Example values from 0 to 170 with a step of 10
+  #   message = Shield.sendCommand("DUTY","LEG2",duty_cycle)
+  #   print(f"Sent command with frequency: {duty_cycle}, message: {message1}")
+
+
+
+  # for dead_time_value in range(100, 300, 50):  
+  #     # message1 = Shield.sendCommand("DEAD_TIME_RISING", "LEG1", dead_time_value)
+  #     # message1 = Shield.sendCommand("DEAD_TIME_FALLING", "LEG1", dead_time_value)
+  #     message1 = Shield.sendCommand("DEAD_TIME_RISING", "LEG2", dead_time_value)
+  #     message1 = Shield.sendCommand("DEAD_TIME_FALLING", "LEG2", dead_time_value)
+  #     print(f"Sent command with phase shift: {dead_time_value}, message: {message1}")
+
+  # for dead_time_value in range(300, 100, -50):  
+  #     # message1 = Shield.sendCommand("DEAD_TIME_RISING", "LEG1", dead_time_value)
+  #     # message1 = Shield.sendCommand("DEAD_TIME_FALLING", "LEG1", dead_time_value)
+  #     message1 = Shield.sendCommand("DEAD_TIME_RISING", "LEG2", dead_time_value)
+  #     message1 = Shield.sendCommand("DEAD_TIME_FALLING", "LEG2", dead_time_value)
+  #     print(f"Sent command with phase shift: {dead_time_value}, message: {message1}")
+
 
   # for frequency_value in range(50000, 150000, 10000):  # Example values from 0 to 170 with a step of 10
   #     message1 = Shield.sendCommand("FREQUENCY", "LEG1", frequency_value)
@@ -125,9 +170,9 @@ try:
   message1 = Shield.sendCommand("PHASE_SHIFT","LEG2",0)
   print(message1)
 
-  # for phase_shift_value in range(0, 180, 10):  # Example values from 0 to 170 with a step of 10
-  #     message1 = Shield.sendCommand("PHASE_SHIFT", "LEG2", phase_shift_value)
-  #     print(f"Sent command with phase shift: {phase_shift_value}, message: {message1}")
+  for phase_shift_value in range(0, 180, 10):  # Example values from 0 to 170 with a step of 10
+      message1 = Shield.sendCommand("PHASE_SHIFT", "LEG2", phase_shift_value)
+      print(f"Sent command with phase shift: {phase_shift_value}, message: {message1}")
 
 
 
