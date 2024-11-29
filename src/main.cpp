@@ -30,6 +30,7 @@
 #include "SpinAPI.h"
 #include "TaskAPI.h"
 #include "ShieldAPI.h"
+#include "CommunicationAPI.h"
 #include "pid.h"
 #include "comm_protocol.h"
 
@@ -105,6 +106,11 @@ float32_t V3_min = 0.0;
 static Pid pid3;
 #endif
 
+// static struct consigne_struct tx_consigne;
+// static struct consigne_struct rx_consigne;
+// static uint8_t* buffer_tx = (uint8_t*)&tx_consigne;
+// static uint8_t* buffer_rx =(uint8_t*)&rx_consigne;
+
 static uint32_t counter = 0;
 static uint32_t temp_meas_internal = 10;
 
@@ -134,6 +140,12 @@ void setup_routine()
     CommTask_num = task.createBackground(loop_communication_task);
     task.createCritical(&loop_control_task, control_task_period);
 
+    communication.sync.initSlave(); // start the synchronisation
+    shield.sensors.enableSensor(ANALOG_COMM, ADC_2); // enable the analog measurement
+    // communication.can.setCanNodeAddr(CAN_SLAVE_ADDR);
+    // communication.can.setBroadcastPeriod(10);
+    // communication.can.setControlPeriod(10);
+
     pid1.init(pid_params);
     pid2.init(pid_params);
 #ifdef CONFIG_SHIELD_OWNVERTER
@@ -143,6 +155,13 @@ void setup_routine()
     task.startBackground(AppTask_num);
     task.startBackground(CommTask_num);
     task.startCritical();
+
+    communication.rs485.configure(buffer_tx, 
+                                  buffer_rx, 
+                                  sizeof(ConsigneStruct_t), 
+                                  slave_reception_function, 
+                                  SPEED_20M); // custom configuration for RS485
+
 
 }
 
@@ -258,6 +277,11 @@ void loop_control_task()
         I3_low_value = meas_data;
 #endif
 
+    meas_data = shield.sensors.getLatestValue(ANALOG_COMM);
+    if (meas_data != NO_VALUE)
+        analog_value = meas_data;
+
+    ctrl_slave_counter++;
 
     //----------- DEPLOYS MODES----------------
     switch(mode){
