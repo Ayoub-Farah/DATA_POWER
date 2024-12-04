@@ -89,7 +89,7 @@ int8_t AppTask_num, CommTask_num;
 static float32_t acquisition_moment = 0.06;
 
 static float meas_data; // temp storage meas value (ctrl task)
-static float* meas_tab;
+float32_t* meas_tab;
 static uint32_t nb_meas_data_values = 6;
 
 float32_t starting_duty_cycle = 0.1;
@@ -158,9 +158,6 @@ bool a_trigger() {
 }
 
 void dump_scope_datas(ScopeMimicry &scope)  {
-
-    uint16_t segment_size = 1000;
-    uint16_t nb_data_dumped = 0;
     task.suspendBackgroundMs(1000);
     printk("begin record\n");
     printk("#");
@@ -361,6 +358,7 @@ void loop_control_task()
         V_testleg_4 = 0.0;
         V_testleg_5 = 0.0;
     }
+    
 
 
     
