@@ -32,6 +32,7 @@
 #include "ShieldAPI.h"
 #include "pid.h"
 #include "comm_protocol.h"
+#include "CommunicationAPI.h"
 
 #define RECORD_SIZE 128 // Number of point to record
 
@@ -130,6 +131,10 @@ void setup_routine()
     shield.power.initBuck(LEG3);
 #endif
 
+    communication.analog.init();
+    communication.sync.initSlave();
+
+
     AppTask_num = task.createBackground(loop_application_task);
     CommTask_num = task.createBackground(loop_communication_task);
     task.createCritical(&loop_control_task, control_task_period);
@@ -143,6 +148,9 @@ void setup_routine()
     task.startBackground(AppTask_num);
     task.startBackground(CommTask_num);
     task.startCritical();
+
+    communication.rs485.configure(buffer_tx, buffer_rx,sizeof(ConsigneStruct_t),slave_reception_function);    
+
 
 }
 
@@ -257,6 +265,11 @@ void loop_control_task()
     if (meas_data != NO_VALUE)
         I3_low_value = meas_data;
 #endif
+
+    meas_data = shield.sensors.getLatestValue(ANALOG_COMM);
+    if (meas_data != NO_VALUE)
+        analog_value = meas_data;
+
 
 
     //----------- DEPLOYS MODES----------------
