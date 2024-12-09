@@ -72,7 +72,7 @@ float32_t V_testleg_2 = 0.0;
 float32_t V_testleg_3 = 0.0;
 float32_t V_testleg_4 = 0.0;
 float32_t V_testleg_5 = 0.0;
-
+float32_t value_to_plot = 0.0;
 
 float32_t T1_value;
 float32_t T2_value;
@@ -89,7 +89,7 @@ int8_t AppTask_num, CommTask_num;
 static float32_t acquisition_moment = 0.06;
 
 static float meas_data; // temp storage meas value (ctrl task)
-float32_t* meas_tab;
+uint16_t* meas_tab;
 static uint32_t nb_meas_data_values = 6;
 
 float32_t starting_duty_cycle = 0.1;
@@ -122,7 +122,7 @@ leg_t test_leg = LEG1; // Default to LEG1
 const uint16_t NB_DATAS = 1000;
 const float32_t minimal_step = 1.0F / (float32_t) NB_DATAS;
 static uint16_t number_of_cycle = 2;
-static ScopeMimicry scope(NB_DATAS, 10);
+static ScopeMimicry scope(NB_DATAS, 11);
 extern bool is_downloading;
 bool is_test_performing = false;
 bool dc_open_cycle = false;
@@ -209,7 +209,7 @@ void setup_routine()
     scope.connectChannel(V_testleg_2, "V_testleg_2");
     scope.connectChannel(V_testleg_3, "V_testleg_3");
     scope.connectChannel(V_testleg_4, "V_testleg_4");
-    // scope.connectChannel(V_testleg_5, "V_testleg_5");
+    scope.connectChannel(V_testleg_5, "V_testleg_5");
     scope.connectChannel(I_high_value, "I_high");
     scope.connectChannel(duty_cycle, "duty_cycle");
     scope.connectChannel(V_high_value, "V_high");
@@ -298,13 +298,7 @@ void loop_control_task()
 {
     // shield.sensors.getValues
     // ------------- GET SENSOR MEASUREMENTS ---------------------
-    meas_data = shield.sensors.getLatestValue(V1_LOW);
-    if (meas_data != NO_VALUE)
-        V1_low_value = meas_data;
-
-    meas_data = shield.sensors.getLatestValue(V2_LOW);
-    if (meas_data != NO_VALUE)
-        V2_low_value = meas_data;
+    
 
     meas_data = shield.sensors.getLatestValue(V_HIGH);
     if (meas_data != NO_VALUE)
@@ -323,33 +317,76 @@ void loop_control_task()
         I_high_value = meas_data;
 
     if (test_leg == LEG1) {
-        meas_tab = shield.sensors.getValues(V1_LOW, nb_meas_data_values);
+        meas_tab = shield.sensors.getRawValues(V1_LOW, nb_meas_data_values);
     }
     else if (test_leg == LEG2) {
-        meas_tab = shield.sensors.getValues(V2_LOW, nb_meas_data_values);
+        meas_tab = shield.sensors.getRawValues(V2_LOW, nb_meas_data_values);
     }
 #ifdef CONFIG_SHIELD_OWNVERTER
     else {
-        meas_tab = shield.sensors.getValues(V3_LOW, nb_meas_data_values);
+        meas_tab = shield.sensors.getRawValues(V3_LOW, nb_meas_data_values);
     }
 #endif
 
-    if (((cpt >= cpt_step_begin - 4) && (cpt <= cpt_step_begin + 4))
-        || ((cpt >= cpt_step_end - 4) && (cpt <= cpt_step_end + 4))) {
-        if (*meas_tab != NO_VALUE)
-            V_testleg_1 = *meas_tab;
-                    
-        if (*(meas_tab + 1) != NO_VALUE)
-            V_testleg_2 = *(meas_tab + 1);
-                    
-        if (*(meas_tab + 2) != NO_VALUE)
-            V_testleg_3 = *(meas_tab + 2);
-                    
-        if (*(meas_tab + 3) != NO_VALUE)
-            V_testleg_4 = *(meas_tab + 3);
-                    
-        if (*(meas_tab + 4) != NO_VALUE)
-            V_testleg_5 = *(meas_tab + 4);
+    if ((cpt >= cpt_step_begin - 4) && (cpt <= cpt_step_end + 4)) {
+
+        switch(test_leg)
+        {
+            case LEG2:    // IDLE MODE - turns data emission off
+                meas_data = shield.sensors.getLatestValue(V1_LOW);
+                if (meas_data != NO_VALUE)
+                    V1_low_value = meas_data;
+
+                if (*meas_tab != NO_VALUE){
+                    value_to_plot = shield.sensors.convertRawValue(V2_LOW,*meas_tab);
+                    V_testleg_1 = value_to_plot;
+                }       
+                if (*(meas_tab + 1) != NO_VALUE){
+                    value_to_plot = shield.sensors.convertRawValue(V2_LOW,*(meas_tab + 1));
+                    V_testleg_2 = value_to_plot;
+                }
+                if (*(meas_tab + 2) != NO_VALUE){
+                    value_to_plot = shield.sensors.convertRawValue(V2_LOW,*(meas_tab + 2));
+                    V_testleg_3 = value_to_plot ;
+                }
+                if (*(meas_tab + 3) != NO_VALUE){
+                    value_to_plot = shield.sensors.convertRawValue(V2_LOW, *(meas_tab + 3));
+                    V_testleg_4 = value_to_plot;
+                }  
+                if (*(meas_tab + 4) != NO_VALUE){
+                    value_to_plot = shield.sensors.convertRawValue(V2_LOW, *(meas_tab + 4));
+                    V_testleg_5 = value_to_plot;
+                }
+                break;
+            default:
+                meas_data = shield.sensors.getLatestValue(V2_LOW);
+                if (meas_data != NO_VALUE)
+                    V2_low_value = meas_data;
+
+
+                if (*meas_tab != NO_VALUE){
+                    value_to_plot = shield.sensors.convertRawValue(V1_LOW,*meas_tab);
+                    V_testleg_1 = value_to_plot;
+                }       
+                if (*(meas_tab + 1) != NO_VALUE){
+                    value_to_plot = shield.sensors.convertRawValue(V1_LOW,*(meas_tab + 1));
+                    V_testleg_2 = value_to_plot;
+                }
+                if (*(meas_tab + 2) != NO_VALUE){
+                    value_to_plot = shield.sensors.convertRawValue(V1_LOW,*(meas_tab + 2));
+                    V_testleg_3 = value_to_plot ;
+                }
+                if (*(meas_tab + 3) != NO_VALUE){
+                    value_to_plot = shield.sensors.convertRawValue(V1_LOW, *(meas_tab + 3));
+                    V_testleg_4 = value_to_plot;
+                }  
+                if (*(meas_tab + 4) != NO_VALUE){
+                    value_to_plot = shield.sensors.convertRawValue(V1_LOW, *(meas_tab + 4));
+                    V_testleg_5 = value_to_plot;
+                }
+                break;
+        }
+        
       }
     else {
         V_testleg_1 = 0.0;
@@ -357,6 +394,14 @@ void loop_control_task()
         V_testleg_3 = 0.0;
         V_testleg_4 = 0.0;
         V_testleg_5 = 0.0;
+
+        meas_data = shield.sensors.getLatestValue(V1_LOW);
+        if (meas_data != NO_VALUE)
+            V1_low_value = meas_data;
+
+        meas_data = shield.sensors.getLatestValue(V2_LOW);
+        if (meas_data != NO_VALUE)
+            V2_low_value = meas_data;
     }
     
 
