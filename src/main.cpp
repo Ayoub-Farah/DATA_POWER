@@ -104,6 +104,7 @@ static float32_t Vgrid_ref; //[V]
 static float32_t Vgrid_amplitude_ref = 0.0F; // [V]
 static float32_t Vgrid_amplitude = 0.0F; // [V]
 static float angle = 0.F; // [rad]
+
 //------------- PR RESONANT -------------------------------------
 static float32_t Ts = control_task_period * 1.0e-6F;
 
@@ -200,15 +201,11 @@ float32_t rate_limiter(const float32_t ref, float32_t value, const float32_t rat
 void setup_routine()
 {
     // Setup the hardware first
-    spin.version.setBoardVersion(SPIN_v_1_0);
-    twist.setVersion(shield_TWIST_V1_3);
+    shield.sensors.enableDefaultTwistSensors();
 
-    data.enableTwistDefaultChannels();
     // DISABLE DC LOW CAPACITORS
-    spin.gpio.configurePin(PC6, OUTPUT);
-    spin.gpio.configurePin(PB7, OUTPUT);
-    spin.gpio.resetPin(PC6);
-    spin.gpio.resetPin(PB7);
+    shield.power.disconnectCapacitor(LEG1);
+    shield.power.disconnectCapacitor(LEG2);
 
     scope.connectChannel(I1_low_value, "I1_low_value");
     scope.connectChannel(I_high, "iHigh");
@@ -246,9 +243,10 @@ void setup_routine()
 	pi_current_d.reset();
 	pi_current_q.reset();
 	is_net_synchronized = false;
+
     /* buck voltage mode */
-    twist.initLegBuck(LEG1);
-    twist.initLegBoost(LEG2);
+    shield.power.initBuck(LEG1);
+    shield.power.initBoost(LEG2);
 
     // Then declare tasks
     uint32_t app_task_number = task.createBackground(loop_application_task);
@@ -393,22 +391,22 @@ void loop_critical_task()
 {
     critical_task_counter++;
     // RETRIEVE MEASUREMENTS
-    meas_data = data.getLatest(I1_LOW);
+    meas_data = shield.sensors.getLatestValue(I1_LOW);
     if (meas_data != NO_VALUE) I1_low_value = meas_data;
 
-    meas_data = data.getLatest(V1_LOW);
+    meas_data = shield.sensors.getLatestValue(V1_LOW);
     if (meas_data != NO_VALUE) V1_low_value = meas_data;
 
-    meas_data = data.getLatest(V2_LOW);
+    meas_data = shield.sensors.getLatestValue(V2_LOW);
     if (meas_data != NO_VALUE) V2_low_value = meas_data;
 
-    meas_data = data.getLatest(I2_LOW);
+    meas_data = shield.sensors.getLatestValue(I2_LOW);
     if (meas_data != NO_VALUE) I2_low_value = meas_data;
 
-    meas_data = data.getLatest(V_HIGH);
+    meas_data = shield.sensors.getLatestValue(V_HIGH);
     if (meas_data != NO_VALUE) V_high = meas_data;
 
-    meas_data = data.getLatest(I_HIGH);
+    meas_data = shield.sensors.getLatestValue(I_HIGH);
     if (meas_data != NO_VALUE) I_high = meas_data;
 
     V_high_filt = vHighFilter.calculateWithReturn(V_high);
@@ -428,7 +426,7 @@ void loop_critical_task()
         // FIRST WE STOP THE PWM
         if (pwm_enable == true)
         {
-            twist.stopAll();
+            shield.power.stop(ALL);
             spin.led.turnOff();
             pwm_enable = false;
         }
@@ -441,12 +439,12 @@ void loop_critical_task()
         if (duty_cycle > 0.5F) {
             duty_cycle = 0.5F;
         }
-        twist.setLegDutyCycle(LEG2, 1-duty_cycle);
-        twist.setLegDutyCycle(LEG1, duty_cycle);
+        shield.power.setDutyCycle(LEG2, 1-duty_cycle);
+        shield.power.setDutyCycle(LEG1, duty_cycle);
         // WE START THE PWM
         if (!pwm_enable)
         {
-            twist.startAll();
+            shield.power.start(ALL);
             pwm_enable = true;
         }
     }
@@ -484,7 +482,7 @@ void loop_critical_task()
 			duty_cycle = 0.5;
 
 		}
-        twist.setAllDutyCycle(duty_cycle);
+        shield.power.setDutyCycle(ALL, duty_cycle);
 
     }
     if (critical_task_counter%1 == 0) {
