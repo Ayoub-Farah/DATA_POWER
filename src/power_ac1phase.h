@@ -72,7 +72,7 @@ public:
 
 private:
     // Internal state variables
-    float32_t w0;
+    float32_t _w0;
     float32_t _w;
     SogiParams sogi_i_params;
     clarke_t _Iab;

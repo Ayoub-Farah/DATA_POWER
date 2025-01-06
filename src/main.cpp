@@ -40,6 +40,7 @@
 #include "ScopeMimicry.h"
 #include "control_factory.h"
 #include "zephyr/console/console.h"
+// #include "singlePhaseInverter.h"
 
 #define DUTY_MIN 0.1F
 #define DUTY_MAX 0.9F
@@ -232,7 +233,7 @@ void setup_routine()
 
     // PR initialisation.
 
-    ac_meas_config.grid_voltage = virtual_Vgrid_amplitude;
+    ac_meas_config.grid_voltage = 10.0;
     ac_meas_config.w0 = w0;
     ac_meas_config.Ts = Ts;
 
@@ -462,25 +463,25 @@ void loop_critical_task()
 			is_net_synchronized = true;
 		}
 
-		// if (is_net_synchronized) {
-		// 	Id = inverter.getIdq().d;
-		// 	Iq = inverter.getIdq().q;
-		// 	Ialpha = inverter.getIab().alpha;
-		// 	Ibeta = inverter.getIab().beta;
+		if (is_net_synchronized) {
+			Id = inverter.getIdq().d;
+			Iq = inverter.getIdq().q;
+			Ialpha = inverter.getIab().alpha;
+			Ibeta = inverter.getIab().beta;
 
-		// 	Vdq.d = pi_current_d.calculateWithReturn(0.0, Id);
-		// 	Vdq.q = pi_current_q.calculateWithReturn(Iq_ref, Iq);
-		// 	Vdq.o = 0.0;
-		// 	Vab = Transform::rotation_to_clarke(Vdq, inverter.getTheta());
-		// 	Vond = Vab.alpha;
-		// 	duty_cycle = Vond /(2.0F * Udc ) + 0.5F;
-		// }
-		// else
-		// {
-		// 	duty_cycle = 0.5;
+			Vdq.d = pi_current_d.calculateWithReturn(0.0, Id);
+			Vdq.q = pi_current_q.calculateWithReturn(Iq_ref, Iq);
+			Vdq.o = 0.0;
+			Vab = Transform::rotation_to_clarke(Vdq, inverter.getTheta());
+			Vond = Vab.alpha;
+			duty_cycle = Vond /(2.0F * Udc ) + 0.5F;
+		}
+		else
+		{
+			duty_cycle = 0.5;
 
-		// }
-        // twist.setAllDutyCycle(duty_cycle);
+		}
+        twist.setAllDutyCycle(duty_cycle);
 
     }
     if (critical_task_counter%1 == 0) {
