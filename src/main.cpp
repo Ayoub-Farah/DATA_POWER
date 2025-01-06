@@ -70,8 +70,11 @@ static float32_t V_high_filt; // [V]
 
 static float meas_data; // temp storage meas value (ctrl task)
 
-static power_ac1phase_params_t ac_meas_config;
-static power_ac1phase_t pq_power;
+static PowerAC1PhaseOutput pq_power;
+static PowerAC1PhaseParams ac_meas_config;
+static PowerAC1Phase inverter;
+
+
 static float32_t Vnet;
 static float32_t virtual_Vgrid_amplitude = 18.0F;
 static float32_t Vq_net;
@@ -83,18 +86,18 @@ static float32_t Id, Iq;
 static float32_t Ialpha, Ibeta;
 static const float32_t sync_power_tolerance = 0.1;
 static bool is_net_synchronized;
-
+static float32_t omega;
 
 
 /* duty_cycle*/
 static float32_t duty_cycle;// [No unit]
 
-static float32_t Udc = 40.0F; // dc voltage supply assumed [V]
+static float32_t Udc = 60.0F; // dc voltage supply assumed [V]
 static const float f0 = 50.0F; // fundamental frequency [Hz]
 static const float32_t w0 = 2.0F * PI * f0;   // pulsation [rad/s]
 /* Sinewave settings */
 static float32_t Vgrid_ref; //[V]
-static float32_t Vgrid_amplitude_ref = 0.0F; // [V] 
+static float32_t Vgrid_amplitude_ref = 0.0F; // [V]
 static float32_t Vgrid_amplitude = 0.0F; // [V]
 static float angle = 0.F; // [rad]
 //------------- PR RESONANT -------------------------------------
@@ -115,7 +118,7 @@ static uint32_t critical_task_counter;
 
 // the scope help us to record datas during the critical task
 // its a library which must be included in platformio.ini
-static ScopeMimicry scope(1024, 17);
+static ScopeMimicry scope(1024, 20);
 static bool is_downloading;
 static bool trigger = false;
 //---------------------------------------------------------------
@@ -130,7 +133,7 @@ enum serial_interface_menu_mode // LIST OF POSSIBLE MODES FOR THE OWNTECH CONVER
 
 static uint8_t mode = IDLEMODE;
 static uint8_t mode_asked = IDLEMODE;
-static float32_t spying_mode = 0; 
+static float32_t spying_mode = 0;
 static const float32_t MAX_CURRENT = 8.0F;
 
 bool a_trigger() {
@@ -142,7 +145,7 @@ bool a_trigger() {
  * we use this function in coordination with a miniterm python filter on the host side.
  * `filter_recorded_data.py` to save the data in a file and format them in float.
  *
- * @param scope 
+ * @param scope
  */
 void dump_scope_datas(ScopeMimicry &scope)  {
 	scope.reset_dump();
@@ -156,7 +159,7 @@ void dump_scope_datas(ScopeMimicry &scope)  {
 
 // UTILS FUNCTIONS FOR CONTROL
 float32_t saturate(const float32_t x, float32_t min, float32_t max) {
-    if (x > max) { 
+    if (x > max) {
         return max;
     }
     if (x < min) {
@@ -172,7 +175,7 @@ float32_t sign(float32_t x, float32_t tol=1e-3) {
     if (x < -tol) {
         return -1.0F;
     }
-    return 0.0F; 
+    return 0.0F;
 }
 
 float32_t rate_limiter(const float32_t ref, float32_t value, const float32_t rate) {
@@ -220,12 +223,22 @@ void setup_routine()
 	scope.connectChannel(Ibeta, "Ibeta");
 	scope.connectChannel(Vdq.d, "Vd_ond");
 	scope.connectChannel(Vdq.q, "Vq_ond");
+	scope.connectChannel(Vab.alpha, "Valpha");
+	scope.connectChannel(Vab.beta, "Vbeta");
+	scope.connectChannel(omega, "omega");
     scope.set_delay(0.0F);
     scope.set_trigger(a_trigger);
     scope.start();
 
     // PR initialisation.
-    power_ac1phase_init(&ac_meas_config, 10.0, 2.0*PI*50.0, Ts);
+
+    ac_meas_config.grid_voltage = virtual_Vgrid_amplitude;
+    ac_meas_config.w0 = w0;
+    ac_meas_config.Ts = Ts;
+
+    inverter.init(ac_meas_config);
+
+    // power_ac1phase_init(&ac_meas_config, 10.0, 2.0*PI*50.0, Ts);
 	pi_current_d.reset();
 	pi_current_q.reset();
 	is_net_synchronized = false;
@@ -243,7 +256,7 @@ void setup_routine()
     task.startBackground(com_task_number);
     task.startCritical(); // Uncomment if you use the critical task
 
-    
+
 }
 
 //--------------LOOP FUNCTIONS--------------------------------
@@ -283,7 +296,7 @@ void loop_communication_task()
 					Iq_ref += 0.1F;
 				}
             break;
-        case 'd': 
+        case 'd':
 				if (Iq_ref > 0.1F)
 				{
 					Iq_ref -= 0.1F;
@@ -320,7 +333,7 @@ switch (mode) {
             }
         break;
         case STARTUPMODE:
-            if (duty_cycle > 0.49F ) mode = POWERMODE; 
+            if (duty_cycle > 0.49F ) mode = POWERMODE;
         break;
         case POWERMODE:
             if (mode_asked == IDLEMODE) {
@@ -350,7 +363,7 @@ switch (mode) {
             is_downloading = false;
         }
     }
-    else 
+    else
     {
 	    printk("%d:", mode);
 	    printk("% 6.2f:", (double)Vgrid_amplitude_ref);
@@ -375,7 +388,7 @@ switch (mode) {
 void loop_critical_task()
 {
     critical_task_counter++;
-    // RETRIEVE MEASUREMENTS 
+    // RETRIEVE MEASUREMENTS
     meas_data = data.getLatest(I1_LOW);
     if (meas_data != NO_VALUE) I1_low_value = meas_data;
 
@@ -397,9 +410,9 @@ void loop_critical_task()
     V_high_filt = vHighFilter.calculateWithReturn(V_high);
 
     // MANAGE OVERCURRENT
-    if (I1_low_value > MAX_CURRENT 
-        || I1_low_value < -MAX_CURRENT 
-        || I2_low_value > MAX_CURRENT 
+    if (I1_low_value > MAX_CURRENT
+        || I1_low_value < -MAX_CURRENT
+        || I2_low_value > MAX_CURRENT
         || I2_low_value < -MAX_CURRENT)
     {
         mode = ERRORMODE;
@@ -436,39 +449,41 @@ void loop_critical_task()
     if (mode == POWERMODE)
     {
 		// trigger = true;
-        angle = ot_modulo_2pi(angle + w0 * Ts); 
+        angle = ot_modulo_2pi(angle + w0 * Ts);
 		Vnet = virtual_Vgrid_amplitude * ot_sin(angle);
-        pq_power = power_ac1phase(Vnet, I1_low_value, &ac_meas_config);
-		Vq_net = ac_meas_config.sogi_pll_params.Vdq.q;
+        pq_power = inverter.calculate(Vnet, I1_low_value);
+        Vq_net = inverter.getVdq().q;
+        Vab = inverter.getVab();
+        omega = inverter.getw();
 
-		if (Vq_net < sync_power_tolerance && 
+		if (Vq_net < sync_power_tolerance &&
 			Vq_net > -sync_power_tolerance && critical_task_counter > 1000)
 		{
 			is_net_synchronized = true;
 		}
 
-		if (is_net_synchronized) {
-			Id = ac_meas_config.Idq.d;
-			Iq = ac_meas_config.Idq.q;
-			Ialpha = ac_meas_config.Iab.alpha;
-			Ibeta = ac_meas_config.Iab.beta;
+		// if (is_net_synchronized) {
+		// 	Id = inverter.getIdq().d;
+		// 	Iq = inverter.getIdq().q;
+		// 	Ialpha = inverter.getIab().alpha;
+		// 	Ibeta = inverter.getIab().beta;
 
-			Vdq.d = pi_current_d.calculateWithReturn(0.0, ac_meas_config.Idq.d);
-			Vdq.q = pi_current_q.calculateWithReturn(Iq_ref, ac_meas_config.Idq.q);
-			Vdq.o = 0.0;
-			Vab = Transform::rotation_to_clarke(Vdq, ac_meas_config.sogi_pll_params.theta);
-			Vond = Vab.alpha;
-			duty_cycle = Vond /(2.0F * Udc ) + 0.5F;
-		}
-		else
-		{
-			duty_cycle = 0.5;
+		// 	Vdq.d = pi_current_d.calculateWithReturn(0.0, Id);
+		// 	Vdq.q = pi_current_q.calculateWithReturn(Iq_ref, Iq);
+		// 	Vdq.o = 0.0;
+		// 	Vab = Transform::rotation_to_clarke(Vdq, inverter.getTheta());
+		// 	Vond = Vab.alpha;
+		// 	duty_cycle = Vond /(2.0F * Udc ) + 0.5F;
+		// }
+		// else
+		// {
+		// 	duty_cycle = 0.5;
 
-		}
-        twist.setAllDutyCycle(duty_cycle);
+		// }
+        // twist.setAllDutyCycle(duty_cycle);
 
     }
-    if (critical_task_counter%3 == 0) {
+    if (critical_task_counter%1 == 0) {
         spying_mode = (float32_t) mode;
         scope.acquire();
     }
