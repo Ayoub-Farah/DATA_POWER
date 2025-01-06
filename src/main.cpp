@@ -76,7 +76,7 @@ float32_t delta_V2;
 float32_t V2_max = 0.0;
 float32_t V2_min = 0.0;
 
-int16_t phase_shift_max = 180;
+int16_t phase_shift_max = 360;
 int16_t phase_shift_min = 0;
 
 uint16_t dead_time_max = 2000;

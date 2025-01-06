@@ -754,7 +754,6 @@ void hrtim_phase_shift_set(hrtim_tu_number_t tu_number, uint16_t shift)
     /* Set reset comparator for phase positioning */
     if (shift)
     {
-        LL_HRTIM_TIM_SetResetTrig(HRTIM1, tu_channel[tu_number]->pwm_conf.pwm_tu, LL_HRTIM_TIM_GetResetTrig(HRTIM1, tu_channel[tu_number]->pwm_conf.pwm_tu) & ~timerMaster.phase_shift.reset_trig);
         switch (tu_channel[tu_number]->pwm_conf.pwm_tu)
         {
         /* Timer A is the phase shift reference so it can't be phase
@@ -762,31 +761,37 @@ void hrtim_phase_shift_set(hrtim_tu_number_t tu_number, uint16_t shift)
         case TIMB: /* Timer B reset on timerA comp 2 */
             if (tu_channel[PWMA]->comp_usage.cmp2 != USED && tu_channel[PWMA]->pwm_conf.modulation != UpDwn)
             {
-                LL_HRTIM_TIM_SetCompare2(HRTIM1, LL_HRTIM_TIMER_A, shift); // if timA comp2 is used (e.g. in current mode) and timA is not left-aligned we can't phaseshift timB
                 LL_HRTIM_TIM_SetResetTrig(HRTIM1, tu_channel[tu_number]->pwm_conf.pwm_tu, tu_channel[tu_number]->phase_shift.reset_trig);
+                LL_HRTIM_TIM_SetCompare2(HRTIM1, LL_HRTIM_TIMER_A, shift); // if timA comp2 is used (e.g. in current mode) and timA is not left-aligned we can't phaseshift timB
             }
             else
                 LL_HRTIM_TIM_SetResetTrig(HRTIM1, tu_channel[tu_number]->pwm_conf.pwm_tu, timerMaster.phase_shift.reset_trig); // the reset of timerB is on master PER event
             break;
         case TIMC: /* Timer C reset on master cmp2 */
-            LL_HRTIM_TIM_SetCompare2(HRTIM1, LL_HRTIM_TIMER_MASTER, shift);
             LL_HRTIM_TIM_SetResetTrig(HRTIM1, tu_channel[tu_number]->pwm_conf.pwm_tu, tu_channel[tu_number]->phase_shift.reset_trig);
+            LL_HRTIM_TIM_SetCompare2(HRTIM1, LL_HRTIM_TIMER_MASTER, shift);
             break;
         case TIMD: /* Timer D reset on master cmp3 */
-            LL_HRTIM_TIM_SetCompare3(HRTIM1, LL_HRTIM_TIMER_MASTER, shift);
             LL_HRTIM_TIM_SetResetTrig(HRTIM1, tu_channel[tu_number]->pwm_conf.pwm_tu, tu_channel[tu_number]->phase_shift.reset_trig);
+            LL_HRTIM_TIM_SetCompare3(HRTIM1, LL_HRTIM_TIMER_MASTER, shift);
             break;
         case TIME: /* Timer E reset on master cmp4 */
-            LL_HRTIM_TIM_SetCompare4(HRTIM1, LL_HRTIM_TIMER_MASTER, shift);
             LL_HRTIM_TIM_SetResetTrig(HRTIM1, tu_channel[tu_number]->pwm_conf.pwm_tu, tu_channel[tu_number]->phase_shift.reset_trig);
+            LL_HRTIM_TIM_SetCompare4(HRTIM1, LL_HRTIM_TIMER_MASTER, shift);
             break;
         case TIMF: /* Timer F reset on master cmp1 */
-            LL_HRTIM_TIM_SetCompare1(HRTIM1, LL_HRTIM_TIMER_MASTER, shift);
             LL_HRTIM_TIM_SetResetTrig(HRTIM1, tu_channel[tu_number]->pwm_conf.pwm_tu, tu_channel[tu_number]->phase_shift.reset_trig);
+            LL_HRTIM_TIM_SetCompare1(HRTIM1, LL_HRTIM_TIMER_MASTER, shift);
             break;
         default:
             break;
         }
+
+        LL_HRTIM_TIM_SetResetTrig(HRTIM1, 
+                                  tu_channel[tu_number]->pwm_conf.pwm_tu, 
+                                  LL_HRTIM_TIM_GetResetTrig(HRTIM1, tu_channel[tu_number]->pwm_conf.pwm_tu) & ~timerMaster.phase_shift.reset_trig);
+
+
     }
     else if ((timerMaster.pwm_conf.period == tu_channel[tu_number]->pwm_conf.period && timerMaster.pwm_conf.ckpsc == tu_channel[tu_number]->pwm_conf.ckpsc) || (timerMaster.pwm_conf.period/2u == (tu_channel[tu_number]->pwm_conf.period) && timerMaster.pwm_conf.ckpsc == tu_channel[tu_number]->pwm_conf.ckpsc))
     {
