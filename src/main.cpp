@@ -125,7 +125,7 @@ static float32_t omega;
 /* duty_cycle*/
 static float32_t duty_cycle;// [No unit]
 
-static float32_t Udc = 60.0F; // dc voltage supply assumed [V]
+static float32_t Udc = 20.0F; // dc voltage supply assumed [V]
 static const float f0 = 50.0F; // fundamental frequency [Hz]
 static const float32_t w0 = 2.0F * PI * f0;   // pulsation [rad/s]
 /* Sinewave settings */
