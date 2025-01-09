@@ -125,9 +125,10 @@ static float32_t omega;
 /* duty_cycle*/
 static float32_t duty_cycle;// [No unit]
 
-static float32_t Udc = 60.0F; // dc voltage supply assumed [V]
+static float32_t Udc = 20.0F; // dc voltage supply assumed [V]
 static const float f0 = 50.0F; // fundamental frequency [Hz]
 static const float32_t w0 = 2.0F * PI * f0;   // pulsation [rad/s]
+static float32_t w;   // corrected pulse [rad/s]
 /* Sinewave settings */
 static float32_t Vgrid_ref; //[V]
 static float32_t Vgrid_amplitude_ref = 0.0F; // [V]
@@ -152,6 +153,16 @@ static Pid pi_current_q = controlLibFactory.pid(Ts, kp, Ti, Td, N, lower_bound, 
 
 static Pid pi_voltage_d = controlLibFactory.pid(Ts, 0.01, 0.003, Td, N, lower_bound, upper_bound);
 static Pid pi_voltage_q = controlLibFactory.pid(Ts, 0.01, 0.003, Td, N, lower_bound, upper_bound);
+
+static Pid pi_pll;
+static PidParams pi_pll_params;    ///< PI controller parameters.
+
+static float32_t rise_time = 1.0F * 2.0F * PI / w0;
+static float32_t wn = 3.0F / rise_time;
+static float32_t xsi = 0.7F;
+static float32_t Kp_pll = 2 * wn * xsi / Udc;
+static float32_t Ki_pll = (wn * wn) / Udc;
+static float32_t Kr = 500.0;
 
 Sogi sogi_i;
 Sogi sogi_v;
@@ -297,11 +308,21 @@ void setup_routine()
     Vdq_ref_min.d = -0.1;
     Vdq_ref_min.q = -0.1;
 
-
-
     Idq_ref_delta.d = 0.0;
     Idq_ref_delta.q = 0.0;
 
+
+    // parameters of the pll pi controller
+    pi_pll_params.Ts = Ts;
+    pi_pll_params.Td = 0.0;
+    pi_pll_params.N = 1;
+    pi_pll_params.Ti = Kp_pll / Ki_pll;
+    pi_pll_params.Kp = Kp_pll;
+    pi_pll_params.lower_bound = -10.0F * w0;
+    pi_pll_params.upper_bound = 10.0F * w0;
+
+    pi_pll.init(pi_pll_params);
+    pi_pll.reset(w0);
 
 
     // power_ac1phase_init(&ac_meas_config, 10.0, 2.0*PI*50.0, Ts);
@@ -362,27 +383,27 @@ void loop_communication_task()
                 }
             break;
         case 'u':
-				if (Vdq_ref.d < Vdq_ref_max.d)
+				if (Idq_ref.d < Idq_ref_max.d)
 				{
-					Vdq_ref.d += 1.0F;
+					Idq_ref.d += 0.1F;
 				}
             break;
         case 'j':
-				if (Vdq_ref.d > Vdq_ref_min.d)
+				if (Idq_ref.d > Idq_ref_min.d)
 				{
-					Vdq_ref.d -= 1.0F;
+					Idq_ref.d -= 0.1F;
 				}
             break;
         case 'd':
-				if (Vdq_ref.d < Vdq_ref_max.d)
+				if (Idq_ref.d < Idq_ref_max.d)
 				{
-					Vdq_ref.d += 5.0F;
+					Idq_ref.d += 0.5F;
 				}
             break;
         case 'c':
-				if (Vdq_ref.d > Vdq_ref_min.d)
+				if (Idq_ref.d > Idq_ref_min.d)
 				{
-					Vdq_ref.d -= 5.0F;
+					Idq_ref.d -= 0.5F;
 				}
             break;
         case 'r':
@@ -422,7 +443,9 @@ switch (mode) {
             if (mode_asked == IDLEMODE) {
                 mode = IDLEMODE;
             }
+            if (is_net_synchronized) spin.led.toggle();  //blinks when synchronized
         break;
+
         case ERRORMODE:
         break;
     }
@@ -526,50 +549,72 @@ void loop_critical_task()
         shield.power.setDutyCycle(LEG2, 1-duty_cycle);
         shield.power.setDutyCycle(LEG1, duty_cycle);
         // WE START THE PWM
-        if (!pwm_enable)
-        {
-            shield.power.start(ALL);
-            pwm_enable = true;
-        }
+        // if (!pwm_enable)
+        // {
+        //     shield.power.start(ALL);
+        //     pwm_enable = true;
+        // }
     }
     if (mode == POWERMODE)
-    {
-        theta = ot_modulo_2pi(theta + w0 * Ts);
+    {     
+
+
+        w = w0 + pi_pll.calculateWithReturn(0, -1.0*Vdq.q);
+        theta = ot_modulo_2pi(theta + w * Ts);
+
+        // theta = ot_modulo_2pi(theta + w0 * Ts);  //grid forming code 
+
 
         Vab = sogi_v.calc(Vgrid_meas,w0);
         Iab = sogi_i.calc(Igrid_meas,w0);
+
         Vdq = Transform::rotation_to_dqo(Vab, theta);
         Idq = Transform::rotation_to_dqo(Iab, theta);
 
-        // original code
-        Idq_ref_delta.d = pi_voltage_d.calculateWithReturn(Vdq_ref.d, Vdq.d); 
-        Idq_ref_delta.q = pi_voltage_q.calculateWithReturn(Vdq_ref.q, Vdq.q); 
 
-        // current test
-        // Idq_ref_delta.d = 0.0; 
-        // Idq_ref_delta.q = 0.0; 
+		if (Vdq.q < sync_power_tolerance &&
+			Vdq.q > -sync_power_tolerance && 
+            critical_task_counter > 1000)
+		{
+			is_net_synchronized = true;
+		}
+
+        if(is_net_synchronized){
 
 
-        Vdq_output.d = pi_current_d.calculateWithReturn(Idq_ref.d + Idq_ref_delta.d, Idq.d); 
-        Vdq_output.q = pi_current_q.calculateWithReturn(Idq_ref.q + Idq_ref_delta.q, Idq.q); 
+            // original code
+            // Idq_ref_delta.d = pi_voltage_d.calculateWithReturn(Vdq_ref.d, Vdq.d); 
+            // Idq_ref_delta.q = pi_voltage_q.calculateWithReturn(Vdq_ref.q, Vdq.q); 
+
+            // current test
+            // Idq_ref_delta.d = 0.0; 
+            // Idq_ref_delta.q = 0.0; 
+
+
+            // Vdq_output.d = pi_current_d.calculateWithReturn(Idq_ref.d + Idq_ref_delta.d, Idq.d); 
+            // Vdq_output.q = pi_current_q.calculateWithReturn(Idq_ref.q + Idq_ref_delta.q, Idq.q); 
+            
+            // // original code
+            // // Vdq_output.d = Vdq_output.d + Vdq_ref.d; 
+            // // Vdq_output.q = Vdq_output.q + Vdq_ref.q;
+
+            // // current test
+            // Vdq_output.d = Vdq_output.d + Idq_ref.d*R_load; 
+            // Vdq_output.q = Vdq_output.q + Idq_ref.q*R_load;
+
+
+            // Vdq_output.o = 0.0;      
         
-        // original code
-        Vdq_output.d = Vdq_output.d + Vdq_ref.d; 
-        Vdq_output.q = Vdq_output.q + Vdq_ref.q;
+            // Vab_output = Transform::rotation_to_clarke(Vdq_output, theta);
 
-        // current test
-        // Vdq_output.d = Vdq_output.d + Idq_ref.d*R_load; 
-        // Vdq_output.q = Vdq_output.q + Idq_ref.q;
+            // Vond = Vab_output.alpha;
+            // duty_cycle = Vond /(2.0F * Udc ) + 0.5F;
+        }else{
+            duty_cycle = 0.5;
+        }
 
 
-        Vdq_output.o = 0.0;      
-       
-        Vab_output = Transform::rotation_to_clarke(Vdq_output, theta);
-
-        Vond = Vab_output.alpha;
-        duty_cycle = Vond /(2.0F * Udc ) + 0.5F;
-        shield.power.setDutyCycle(ALL, duty_cycle);
-
+        // shield.power.setDutyCycle(ALL, duty_cycle);
 
 		// // trigger = true;
         // angle = ot_modulo_2pi(angle + w0 * Ts);
