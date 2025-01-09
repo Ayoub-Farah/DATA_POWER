@@ -125,7 +125,7 @@ static float32_t omega;
 /* duty_cycle*/
 static float32_t duty_cycle;// [No unit]
 
-static float32_t Udc = 20.0F; // dc voltage supply assumed [V]
+static float32_t Udc = 60.0F; // dc voltage supply assumed [V]
 static const float f0 = 50.0F; // fundamental frequency [Hz]
 static const float32_t w0 = 2.0F * PI * f0;   // pulsation [rad/s]
 static float32_t w;   // corrected pulse [rad/s]
@@ -141,8 +141,8 @@ static float32_t Ts = control_task_period * 1.0e-6F;
 
 // static float32_t kp = 0.000215;
 // static float32_t Ti = 0.2*7.5175e-5;
-static float32_t kp = 0.001;      // kp is very small due to the fact that we are on a pure delay system (ref Viking)
-static float32_t Ti = 0.001/3000; // Ti is Kp/Ki
+static float32_t kp = 660e-6;      // kp is 2* 66e-6 Henry/100e-3 seconds
+static float32_t Ti = 400e-3;      // Ti is 4*Taui = 400e-3
 float32_t Td = 0.0;
 float32_t N = 1.0;
 float32_t upper_bound = Udc;
@@ -184,7 +184,7 @@ enum serial_interface_menu_mode // LIST OF POSSIBLE MODES FOR THE OWNTECH CONVER
     IDLEMODE = 0,
     POWERMODE=1,
     ERRORMODE=3,
-    STARTUPMODE=4
+    STANDBYMODE=4
 };
 
 static uint8_t mode = IDLEMODE;
@@ -277,7 +277,7 @@ void setup_routine()
 	scope.connectChannel(Vdq.q, "Vq_ond");
 	scope.connectChannel(Vab.alpha, "Valpha");
 	scope.connectChannel(Vab.beta, "Vbeta");
-	scope.connectChannel(omega, "omega");
+	scope.connectChannel(w, "omega");
     scope.set_delay(0.0F);
     scope.set_trigger(a_trigger);
     scope.start();
@@ -382,6 +382,12 @@ void loop_communication_task()
                     mode_asked = POWERMODE;
                 }
             break;
+        case 's':
+                if (!is_downloading){
+                    scope.start();
+                    mode_asked = STANDBYMODE;
+                }
+            break;
         case 'u':
 				if (Idq_ref.d < Idq_ref_max.d)
 				{
@@ -432,18 +438,31 @@ void loop_application_task()
 // in each state we compute the transitions
 switch (mode) {
         case IDLEMODE:
-            if (mode_asked == POWERMODE && V_high_filt >= UDC_STARTUP) {
-                mode = STARTUPMODE;
+            if (mode_asked == POWERMODE || mode_asked == STANDBYMODE) {
+                if(V_high_filt >= UDC_STARTUP){
+                    mode = STANDBYMODE;
+                    mode_asked = STANDBYMODE;
+                }
             }
+            spin.led.turnOff();
         break;
-        case STARTUPMODE:
-            if (duty_cycle > 0.49F ) mode = POWERMODE;
+        case STANDBYMODE:
+            if (is_net_synchronized) spin.led.toggle();  //blinks when synchronized
+            if (mode_asked == POWERMODE && is_net_synchronized){
+                mode = POWERMODE;
+            }
+            if (mode_asked == IDLEMODE) {
+                mode = IDLEMODE;
+            } 
         break;
         case POWERMODE:
             if (mode_asked == IDLEMODE) {
                 mode = IDLEMODE;
-            }
-            if (is_net_synchronized) spin.led.toggle();  //blinks when synchronized
+            } 
+            if (mode_asked == STANDBYMODE) {
+                mode = STANDBYMODE;
+            } 
+            spin.led.turnOn();
         break;
 
         case ERRORMODE:
@@ -478,8 +497,8 @@ switch (mode) {
 	    printk("%7.3f:", (double)power.d);
 	    printk("%7.3f:", (double)power.q);
 		printk("%7.3f:", (double)Vdq_ref.d);
-		printk("%7.3f:", (double)Vdq.d);
-		printk("%7.3f:", (double)Vdq.q);
+		printk("%7.3f:", (double)Idq.d);
+		printk("%7.3f:", (double)Idq.q);
         printk("\n");
     }
     task.suspendBackgroundMs(100);
@@ -541,23 +560,17 @@ void loop_critical_task()
         duty_cycle = DUTY_MIN;
     }
 
-    if (mode == STARTUPMODE) { // ramp up the common voltage to Udc/2
-        duty_cycle = rate_limiter(0.5F, duty_cycle, 50.0F); // ramp of 50/s
-        if (duty_cycle > 0.5F) {
-            duty_cycle = 0.5F;
-        }
-        shield.power.setDutyCycle(LEG2, 1-duty_cycle);
-        shield.power.setDutyCycle(LEG1, duty_cycle);
-        // WE START THE PWM
-        // if (!pwm_enable)
-        // {
-        //     shield.power.start(ALL);
-        //     pwm_enable = true;
-        // }
-    }
-    if (mode == POWERMODE)
+    if (mode == POWERMODE || mode == STANDBYMODE)
     {     
 
+        if(mode == STANDBYMODE){
+            if (pwm_enable == true)
+            {
+                shield.power.stop(ALL);
+                spin.led.turnOff();
+                pwm_enable = false;
+            }
+        }
 
         w = w0 + pi_pll.calculateWithReturn(0, -1.0*Vdq.q);
         theta = ot_modulo_2pi(theta + w * Ts);
@@ -579,42 +592,47 @@ void loop_critical_task()
 			is_net_synchronized = true;
 		}
 
-        if(is_net_synchronized){
 
+        if(is_net_synchronized){
 
             // original code
             // Idq_ref_delta.d = pi_voltage_d.calculateWithReturn(Vdq_ref.d, Vdq.d); 
             // Idq_ref_delta.q = pi_voltage_q.calculateWithReturn(Vdq_ref.q, Vdq.q); 
 
             // current test
-            // Idq_ref_delta.d = 0.0; 
-            // Idq_ref_delta.q = 0.0; 
+            Idq_ref_delta.d = 0.0; 
+            Idq_ref_delta.q = 0.0; 
 
 
-            // Vdq_output.d = pi_current_d.calculateWithReturn(Idq_ref.d + Idq_ref_delta.d, Idq.d); 
-            // Vdq_output.q = pi_current_q.calculateWithReturn(Idq_ref.q + Idq_ref_delta.q, Idq.q); 
+            Vdq_output.d = pi_current_d.calculateWithReturn(Idq_ref.d + Idq_ref_delta.d, Idq.d); 
+            Vdq_output.q = pi_current_q.calculateWithReturn(Idq_ref.q + Idq_ref_delta.q, Idq.q); 
             
             // // original code
             // // Vdq_output.d = Vdq_output.d + Vdq_ref.d; 
             // // Vdq_output.q = Vdq_output.q + Vdq_ref.q;
 
-            // // current test
-            // Vdq_output.d = Vdq_output.d + Idq_ref.d*R_load; 
-            // Vdq_output.q = Vdq_output.q + Idq_ref.q*R_load;
-
-
-            // Vdq_output.o = 0.0;      
+            // current test
+            Vdq_output.d = Vdq_output.d + Vdq.d; 
+            Vdq_output.q = Vdq_output.q + Vdq.q;
+            Vdq_output.o = 0.0;      
         
-            // Vab_output = Transform::rotation_to_clarke(Vdq_output, theta);
+            Vab_output = Transform::rotation_to_clarke(Vdq_output, theta);
 
-            // Vond = Vab_output.alpha;
-            // duty_cycle = Vond /(2.0F * Udc ) + 0.5F;
-        }else{
-            duty_cycle = 0.5;
+            Vond = Vab_output.alpha;
+            duty_cycle = Vond /(2.0F * Udc ) + 0.5F;
+
+            if(mode == POWERMODE){
+                if (!pwm_enable)
+                {
+                    shield.power.start(ALL);
+                    pwm_enable = true;
+                }
+                shield.power.setDutyCycle(ALL, duty_cycle);
+            }
+
         }
 
 
-        // shield.power.setDutyCycle(ALL, duty_cycle);
 
 		// // trigger = true;
         // angle = ot_modulo_2pi(angle + w0 * Ts);
