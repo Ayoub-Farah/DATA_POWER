@@ -125,7 +125,7 @@ static float32_t omega;
 /* duty_cycle*/
 static float32_t duty_cycle;// [No unit]
 
-static float32_t Udc = 60.0F; // dc voltage supply assumed [V]
+static float32_t Udc = 20.0F; // dc voltage supply assumed [V]
 static const float f0 = 50.0F; // fundamental frequency [Hz]
 static const float32_t w0 = 2.0F * PI * f0;   // pulsation [rad/s]
 static float32_t w;   // corrected pulse [rad/s]
@@ -141,12 +141,12 @@ static float32_t Ts = control_task_period * 1.0e-6F;
 
 // static float32_t kp = 0.000215;
 // static float32_t Ti = 0.2*7.5175e-5;
-static float32_t kp = 660e-6;      // kp is 2* 66e-6 Henry/100e-3 seconds
-static float32_t Ti = 400e-3;      // Ti is 4*Taui = 400e-3
+static float32_t kp = 0.01;      // kp is 2* 66e-6 Henry/100e-3 seconds
+static float32_t Ti = 0.003;      // Ti is 4*Taui = 400e-3
 float32_t Td = 0.0;
 float32_t N = 1.0;
-float32_t upper_bound = Udc;
-float32_t lower_bound = -Udc;
+float32_t upper_bound = 30;
+float32_t lower_bound = -30;
 
 static Pid pi_current_d = controlLibFactory.pid(Ts, kp, Ti, Td, N, lower_bound, upper_bound);
 static Pid pi_current_q = controlLibFactory.pid(Ts, kp, Ti, Td, N, lower_bound, upper_bound);
@@ -262,22 +262,12 @@ void setup_routine()
     scope.connectChannel(I_high, "I_High");
     scope.connectChannel(V1_low_value, "V1_low_value");
     scope.connectChannel(V2_low_value, "V2_low_value");
-    scope.connectChannel(V_high_filt, "V_high_filt");
     scope.connectChannel(duty_cycle, "duty_cycle");
-    scope.connectChannel(power.d, "power_p");
-    scope.connectChannel(power.q, "power_q");
-    scope.connectChannel(Vq_net, "Vq_net");
-    scope.connectChannel(Vnet, "Vnet");
-	scope.connectChannel(Vond, "Vond");
+
 	scope.connectChannel(Idq.d, "Id");
-	scope.connectChannel(Idq.q, "Iq");
-	scope.connectChannel(Iab.alpha, "Ialpha");
-	scope.connectChannel(Iab.beta, "Ibeta");
-	scope.connectChannel(Vdq.d, "Vd_ond");
-	scope.connectChannel(Vdq.q, "Vq_ond");
+	scope.connectChannel(Idq_ref.d, "Id_ref");
+
 	scope.connectChannel(Vab.alpha, "Valpha");
-	scope.connectChannel(Vab.beta, "Vbeta");
-	scope.connectChannel(w, "omega");
     scope.set_delay(0.0F);
     scope.set_trigger(a_trigger);
     scope.start();
@@ -496,7 +486,7 @@ switch (mode) {
 	    printk("% 6.2f:", (double)V1_low_value);
 	    printk("%7.3f:", (double)power.d);
 	    printk("%7.3f:", (double)power.q);
-		printk("%7.3f:", (double)Vdq_ref.d);
+		printk("%7.3f:", (double)Idq_ref.d);
 		printk("%7.3f:", (double)Idq.d);
 		printk("%7.3f:", (double)Idq.q);
         printk("\n");
@@ -604,9 +594,15 @@ void loop_critical_task()
             Idq_ref_delta.q = 0.0; 
 
 
-            Vdq_output.d = pi_current_d.calculateWithReturn(Idq_ref.d + Idq_ref_delta.d, Idq.d); 
-            Vdq_output.q = pi_current_q.calculateWithReturn(Idq_ref.q + Idq_ref_delta.q, Idq.q); 
-            
+
+            if (mode == POWERMODE){
+                Vdq_output.d = pi_current_d.calculateWithReturn(Idq_ref.d + Idq_ref_delta.d, Idq.d); 
+                Vdq_output.q = pi_current_q.calculateWithReturn(Idq_ref.q + Idq_ref_delta.q, Idq.q); 
+            } else {
+                Vdq_output.d = 0;
+                Vdq_output.d = 0;
+                pi_current_d.reset();
+            } 
             // // original code
             // // Vdq_output.d = Vdq_output.d + Vdq_ref.d; 
             // // Vdq_output.q = Vdq_output.q + Vdq_ref.q;
@@ -619,7 +615,7 @@ void loop_critical_task()
             Vab_output = Transform::rotation_to_clarke(Vdq_output, theta);
 
             Vond = Vab_output.alpha;
-            duty_cycle = Vond /(2.0F * Udc ) + 0.5F;
+            duty_cycle = Vond /(2.0F * V_high_filt ) + 0.5F;
 
             if(mode == POWERMODE){
                 if (!pwm_enable)
