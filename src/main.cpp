@@ -114,6 +114,7 @@ static clarke_t Vab_output;
 static clarke_t Iab;
 
 static float32_t Vond;
+static float32_t R_load = 10;
 
 static float32_t Ialpha, Ibeta;
 static const float32_t sync_power_tolerance = 0.1;
@@ -139,8 +140,8 @@ static float32_t Ts = control_task_period * 1.0e-6F;
 
 // static float32_t kp = 0.000215;
 // static float32_t Ti = 0.2*7.5175e-5;
-static float32_t kp = 0.022;
-static float32_t Ti = 12e-3;
+static float32_t kp = 0.001;      // kp is very small due to the fact that we are on a pure delay system (ref Viking)
+static float32_t Ti = 0.001/3000; // Ti is Kp/Ki
 float32_t Td = 0.0;
 float32_t N = 1.0;
 float32_t upper_bound = Udc;
@@ -149,8 +150,8 @@ float32_t lower_bound = -Udc;
 static Pid pi_current_d = controlLibFactory.pid(Ts, kp, Ti, Td, N, lower_bound, upper_bound);
 static Pid pi_current_q = controlLibFactory.pid(Ts, kp, Ti, Td, N, lower_bound, upper_bound);
 
-static Pid pi_voltage_d = controlLibFactory.pid(Ts, 0.01, Ti, Td, N, lower_bound, upper_bound);
-static Pid pi_voltage_q = controlLibFactory.pid(Ts, 0.01, Ti, Td, N, lower_bound, upper_bound);
+static Pid pi_voltage_d = controlLibFactory.pid(Ts, 0.01, 0.003, Td, N, lower_bound, upper_bound);
+static Pid pi_voltage_q = controlLibFactory.pid(Ts, 0.01, 0.003, Td, N, lower_bound, upper_bound);
 
 Sogi sogi_i;
 Sogi sogi_v;
@@ -286,6 +287,18 @@ void setup_routine()
     Vdq_ref.d = 0.0;
     Vdq_ref.q = 0.0;
 
+    Idq_ref_max.d = 8.0;
+    Idq_ref_max.q = 1.0;
+    Idq_ref_min.d = -0.1;
+    Idq_ref_min.q = -0.1;
+
+    Vdq_ref_max.d = 30.0;
+    Vdq_ref_max.q = 30.0;
+    Vdq_ref_min.d = -0.1;
+    Vdq_ref_min.q = -0.1;
+
+
+
     Idq_ref_delta.d = 0.0;
     Idq_ref_delta.q = 0.0;
 
@@ -330,8 +343,10 @@ void loop_communication_task()
             printk("|     ------- grid forming ------        |\n");
             printk("|     press i : idle mode                |\n");
             printk("|     press p : power mode               |\n");
-            printk("|     press u : vdref up                 |\n");
-            printk("|     press p : vdref down               |\n");
+            printk("|     press d : vdref up by 5V           |\n");
+            printk("|     press c : vdref down by 5V         |\n");
+            printk("|     press u : vdref up by 1V           |\n");
+            printk("|     press j : vdref down by 1V         |\n");
             printk("|________________________________________|\n\n");
             //------------------------------------------------------
             break;
@@ -349,13 +364,25 @@ void loop_communication_task()
         case 'u':
 				if (Vdq_ref.d < Vdq_ref_max.d)
 				{
-					Vdq_ref.d += 0.1F;
+					Vdq_ref.d += 1.0F;
+				}
+            break;
+        case 'j':
+				if (Vdq_ref.d > Vdq_ref_min.d)
+				{
+					Vdq_ref.d -= 1.0F;
 				}
             break;
         case 'd':
+				if (Vdq_ref.d < Vdq_ref_max.d)
+				{
+					Vdq_ref.d += 5.0F;
+				}
+            break;
+        case 'c':
 				if (Vdq_ref.d > Vdq_ref_min.d)
 				{
-					Vdq_ref.d -= 0.1F;
+					Vdq_ref.d -= 5.0F;
 				}
             break;
         case 'r':
@@ -412,7 +439,7 @@ switch (mode) {
             printk("% 7.3f:", (double)V1_low_value);
             printk("%7.3f:", (double)power.d);
             printk("%7.3f:", (double)power.q);
-			printk("%7.3f:", (double)Vdq_ref.d);
+			printk("%7.3f:", (double)Idq_ref.d);
             printk("\n");
         } else {
             dump_scope_datas(scope);
@@ -466,7 +493,7 @@ void loop_critical_task()
     V_high_filt = vHighFilter.calculateWithReturn(V_high);
 
     Vgrid_meas = V1_low_value-V2_low_value;
-    Igrid_meas = I1_low_value-I2_low_value;
+    Igrid_meas = (I1_low_value-I2_low_value)/2;
 
     // MANAGE OVERCURRENT
     if (I1_low_value > MAX_CURRENT
@@ -514,14 +541,27 @@ void loop_critical_task()
         Vdq = Transform::rotation_to_dqo(Vab, theta);
         Idq = Transform::rotation_to_dqo(Iab, theta);
 
+        // original code
         Idq_ref_delta.d = pi_voltage_d.calculateWithReturn(Vdq_ref.d, Vdq.d); 
         Idq_ref_delta.q = pi_voltage_q.calculateWithReturn(Vdq_ref.q, Vdq.q); 
+
+        // current test
+        // Idq_ref_delta.d = 0.0; 
+        // Idq_ref_delta.q = 0.0; 
+
 
         Vdq_output.d = pi_current_d.calculateWithReturn(Idq_ref.d + Idq_ref_delta.d, Idq.d); 
         Vdq_output.q = pi_current_q.calculateWithReturn(Idq_ref.q + Idq_ref_delta.q, Idq.q); 
         
+        // original code
         Vdq_output.d = Vdq_output.d + Vdq_ref.d; 
         Vdq_output.q = Vdq_output.q + Vdq_ref.q;
+
+        // current test
+        // Vdq_output.d = Vdq_output.d + Idq_ref.d*R_load; 
+        // Vdq_output.q = Vdq_output.q + Idq_ref.q;
+
+
         Vdq_output.o = 0.0;      
        
         Vab_output = Transform::rotation_to_clarke(Vdq_output, theta);
