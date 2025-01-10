@@ -87,7 +87,7 @@ int8_t singlePhaseInverter::init(inverter_mode mode, float32_t V_bus, float32_t 
 
     if(_mode == FORMING){
         _current_pi_params.Kp = 0.001;      // kp is 2* 66e-6 Henry/100e-3 seconds
-        _current_pi_params.Ti = 0.0003;      // Ti is 4*Taui = 400e-3
+        _current_pi_params.Ti = 0.001/3000;      // Ti is 4*Taui = 400e-3
         _current_pi_params.Td = 0.0;
         _current_pi_params.N = 1.0;
         _current_pi_params.upper_bound = 30;
