@@ -44,7 +44,7 @@ public:
     singlePhaseInverter();
 
     // Initialization function
-    int8_t init(inverter_mode mode, float32_t grid_Vpk, float32_t grid_w0, float32_t Ts);
+    int8_t init(inverter_mode mode, float32_t V_bus, float32_t grid_Vpk, float32_t grid_w0, float32_t Ts);
 
     // Reset function
     void reset();
