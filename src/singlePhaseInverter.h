@@ -66,11 +66,17 @@ public:
 
     float32_t getTheta();
 
+    bool getSync();
+
     void setVBus(float32_t V_bus);
 
     void setVdqRef(dqo_t Vdq_ref);
 
     void setIdqRef(dqo_t Idq_ref);
+
+    void setPowerOn(bool power_on);
+
+    void setSyncOff();
 
 
 private:
@@ -129,6 +135,14 @@ private:
     float32_t _duty_cycle;   ///< Internal duty cycle.
 
     float32_t _V_bus;   ///< Internal bus voltage.
+
+    bool _power_on;
+    bool _sync;
+    const float32_t _sync_power_tolerance = 0.1;
+
+    uint16_t _sync_delay_counter; 
+    uint16_t _sync_min_delay;
+
 
 
 };
