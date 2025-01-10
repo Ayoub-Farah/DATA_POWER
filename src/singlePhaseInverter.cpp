@@ -86,13 +86,15 @@ int8_t singlePhaseInverter::init(inverter_mode mode, float32_t V_bus, float32_t 
     _Idq_ref_delta.q = 0.0;
 
     if(_mode == FORMING){
+        _current_pi_params.Ts = _Ts;      
         _current_pi_params.Kp = 0.001;      // kp is 2* 66e-6 Henry/100e-3 seconds
-        _current_pi_params.Ti = 0.0003;      // Ti is 4*Taui = 400e-3
+        _current_pi_params.Ti = 0.001/3000;      // Ti is 4*Taui = 400e-3
         _current_pi_params.Td = 0.0;
         _current_pi_params.N = 1.0;
         _current_pi_params.upper_bound = 30;
         _current_pi_params.lower_bound = -30;
     }else{
+        _current_pi_params.Ts = _Ts;      
         _current_pi_params.Kp = 0.001;      // kp is 2* 66e-6 Henry/100e-3 seconds
         _current_pi_params.Ti = 0.0003;      // Ti is 4*Taui = 400e-3
         _current_pi_params.Td = 0.0;
@@ -102,8 +104,11 @@ int8_t singlePhaseInverter::init(inverter_mode mode, float32_t V_bus, float32_t 
     }
     _current_d_pi.init(_current_pi_params);
     _current_q_pi.init(_current_pi_params);
+    _current_d_pi.reset();
+    _current_q_pi.reset();
 
 
+    _voltage_pi_params.Ts = _Ts;      
     _voltage_pi_params.Kp = 0.01;      // kp is 2* 66e-6 Henry/100e-3 seconds
     _voltage_pi_params.Ti = 0.003;      // Ti is 4*Taui = 400e-3
     _voltage_pi_params.Td = 0.0;
@@ -113,6 +118,16 @@ int8_t singlePhaseInverter::init(inverter_mode mode, float32_t V_bus, float32_t 
 
     _voltage_d_pi.init(_voltage_pi_params);
     _voltage_q_pi.init(_voltage_pi_params);
+    _voltage_d_pi.reset();
+    _voltage_q_pi.reset();
+
+    _power_on = false;
+
+    _sync = false;
+    _sync_delay_counter = 0; 
+    _sync_min_delay = 1000;
+
+
 
     return 0;  // Return 0 to indicate success
 }
@@ -130,30 +145,48 @@ float32_t singlePhaseInverter::calculateDuty(float32_t vgrid_meas, float32_t igr
 
     _theta = ot_modulo_2pi(_theta + _w * _Ts);  
 
-    _Vab = _sogi_v.calc(vgrid_meas,_w);
-    _Iab = _sogi_i.calc(igrid_meas,_w);
+    _Vab = _sogi_v.calc(vgrid_meas,_w_ref);
+    _Iab = _sogi_i.calc(igrid_meas,_w_ref);
 
     _Vdq = Transform::rotation_to_dqo(_Vab, _theta);
     _Idq = Transform::rotation_to_dqo(_Iab, _theta);
 
     if(_mode == FORMING){
+
         _Idq_ref_delta.d = _voltage_d_pi.calculateWithReturn(_Vdq_ref.d, _Vdq.d); 
         _Idq_ref_delta.q = _voltage_q_pi.calculateWithReturn(_Vdq_ref.q, _Vdq.q); 
-    }else if(_mode == FOLLOWING){
-        _Idq_ref_delta.d = 0;
-        _Idq_ref_delta.q = 0;
-    }
 
-    _Vdq_output.d = _current_d_pi.calculateWithReturn(_Idq_ref.d + _Idq_ref_delta.d, _Idq.d); 
-    _Vdq_output.q = _current_q_pi.calculateWithReturn(_Idq_ref.q + _Idq_ref_delta.q, _Idq.q); 
+        _Vdq_output.d = _current_d_pi.calculateWithReturn(_Idq_ref.d + _Idq_ref_delta.d, _Idq.d); 
+        _Vdq_output.q = _current_q_pi.calculateWithReturn(_Idq_ref.q + _Idq_ref_delta.q, _Idq.q); 
 
-    if(_mode == FORMING){
         _Vdq_output.d = _Vdq_output.d + _Vdq_ref.d; 
         _Vdq_output.q = _Vdq_output.q + _Vdq_ref.q;
-    }else if(_mode == FOLLOWING){
+
+    }else if(_mode == FOLLOWING && _sync == true){
+
+        if(_power_on == false){
+            _Vdq_output.d = 0.0; 
+            // _Vdq_output.q = 0.0;
+            _current_d_pi.reset(); 
+            // _current_q_pi.reset();
+        } else if(_power_on == true){
+            _Vdq_output.d = _current_d_pi.calculateWithReturn(_Idq_ref.d, _Idq.d); 
+            _Vdq_output.q = _current_q_pi.calculateWithReturn(_Idq_ref.q, _Idq.q); 
+        }
         _Vdq_output.d = _Vdq_output.d + _Vdq.d; 
         _Vdq_output.q = _Vdq_output.q + _Vdq.q;
+
+    }else if(_mode == FOLLOWING && _sync == false){
+
+        if (_Vdq.q < _sync_power_tolerance &&
+			_Vdq.q > -_sync_power_tolerance && 
+            _sync_delay_counter > _sync_min_delay)
+		{
+			_sync = true;
+		}
+        _sync_delay_counter++;
     }
+
 
     _Vab_output = Transform::rotation_to_clarke(_Vdq_output, _theta);
 
@@ -199,6 +232,11 @@ float32_t singlePhaseInverter::getw(){
     return _w;
 }
 
+bool singlePhaseInverter::getSync(){
+    return _sync;
+}
+
+
 void singlePhaseInverter::setVBus(float32_t V_bus){
     _V_bus = V_bus;
 }
@@ -211,6 +249,13 @@ void singlePhaseInverter::setVdqRef(dqo_t Vdq_ref){
     _Vdq_ref = Vdq_ref;
 }
 
+void singlePhaseInverter::setPowerOn(bool power_on){
+    _power_on = power_on;
+}
 
+void singlePhaseInverter::setSyncOff(){
+    _sync = false;
+    _sync_delay_counter = 0;
+}
 
 
