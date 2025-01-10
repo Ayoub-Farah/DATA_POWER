@@ -52,8 +52,6 @@ public:
     // Calculate function
     float32_t calculateDuty(float32_t vgrid_meas, float32_t igrid_meas);
 
-    void calculatePll(float32_t v_meas);
-
     dqo_t getVdq();
 
     clarke_t getIab();
