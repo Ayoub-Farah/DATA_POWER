@@ -277,7 +277,7 @@ void setup_routine()
     // ac_meas_config.w0 = w0;
     // ac_meas_config.Ts = Ts;
 
-    inverter.init(FOLLOWING, Udc, Udc, w0, Ts);
+    inverter.init(FORMING, Udc, Udc, w0, Ts);
 
     sogi_v.init(500.0, Ts);
     sogi_i.init(500.0, Ts);
