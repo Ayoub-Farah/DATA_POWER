@@ -268,6 +268,8 @@ void setup_routine()
 	scope.connectChannel(Idq_ref.d, "Id_ref");
 
 	scope.connectChannel(Vab.alpha, "Valpha");
+	scope.connectChannel(Vdq.q, "Vdq.q");
+	scope.connectChannel(w, "omega");
     scope.set_delay(0.0F);
     scope.set_trigger(a_trigger);
     scope.start();
@@ -278,7 +280,7 @@ void setup_routine()
     // ac_meas_config.w0 = w0;
     // ac_meas_config.Ts = Ts;
 
-    // inverter.init(10.0, w0, Ts);
+    inverter.init(FORMING, Udc, Udc, w0, Ts);
 
     sogi_v.init(500.0, Ts);
     sogi_i.init(500.0, Ts);
@@ -562,17 +564,22 @@ void loop_critical_task()
             }
         }
 
-        w = w0 + pi_pll.calculateWithReturn(0, -1.0*Vdq.q);
-        theta = ot_modulo_2pi(theta + w * Ts);
+        duty_cycle = inverter.calculateDuty(Vgrid_meas, Igrid_meas);
 
-        // theta = ot_modulo_2pi(theta + w0 * Ts);  //grid forming code 
+        Vdq = inverter.getVdq();
+        w = inverter.getw();
+
+        // w = w0 + pi_pll.calculateWithReturn(0, -1.0*Vdq.q);
+        // theta = ot_modulo_2pi(theta + w * Ts);
+
+        // // theta = ot_modulo_2pi(theta + w0 * Ts);  //grid forming code 
 
 
-        Vab = sogi_v.calc(Vgrid_meas,w0);
-        Iab = sogi_i.calc(Igrid_meas,w0);
+        // Vab = sogi_v.calc(Vgrid_meas,w0);
+        // Iab = sogi_i.calc(Igrid_meas,w0);
 
-        Vdq = Transform::rotation_to_dqo(Vab, theta);
-        Idq = Transform::rotation_to_dqo(Iab, theta);
+        // Vdq = Transform::rotation_to_dqo(Vab, theta);
+        // Idq = Transform::rotation_to_dqo(Iab, theta);
 
 
 		if (Vdq.q < sync_power_tolerance &&
@@ -585,37 +592,40 @@ void loop_critical_task()
 
         if(is_net_synchronized){
 
+            inverter.setIdqRef(Idq_ref);
+
             // original code
             // Idq_ref_delta.d = pi_voltage_d.calculateWithReturn(Vdq_ref.d, Vdq.d); 
             // Idq_ref_delta.q = pi_voltage_q.calculateWithReturn(Vdq_ref.q, Vdq.q); 
 
-            // current test
-            Idq_ref_delta.d = 0.0; 
-            Idq_ref_delta.q = 0.0; 
+
+            // // current test
+            // Idq_ref_delta.d = 0.0; 
+            // Idq_ref_delta.q = 0.0; 
 
 
 
-            if (mode == POWERMODE){
-                Vdq_output.d = pi_current_d.calculateWithReturn(Idq_ref.d + Idq_ref_delta.d, Idq.d); 
-                Vdq_output.q = pi_current_q.calculateWithReturn(Idq_ref.q + Idq_ref_delta.q, Idq.q); 
-            } else {
-                Vdq_output.d = 0;
-                Vdq_output.d = 0;
-                pi_current_d.reset();
-            } 
+            // if (mode == POWERMODE){
+            //     Vdq_output.d = pi_current_d.calculateWithReturn(Idq_ref.d + Idq_ref_delta.d, Idq.d); 
+            //     Vdq_output.q = pi_current_q.calculateWithReturn(Idq_ref.q + Idq_ref_delta.q, Idq.q); 
+            // } else {
+            //     Vdq_output.d = 0;
+            //     Vdq_output.d = 0;
+            //     pi_current_d.reset();
+            // } 
             // // original code
             // // Vdq_output.d = Vdq_output.d + Vdq_ref.d; 
             // // Vdq_output.q = Vdq_output.q + Vdq_ref.q;
 
             // current test
-            Vdq_output.d = Vdq_output.d + Vdq.d; 
-            Vdq_output.q = Vdq_output.q + Vdq.q;
-            Vdq_output.o = 0.0;      
+            // Vdq_output.d = Vdq_output.d + Vdq.d; 
+            // Vdq_output.q = Vdq_output.q + Vdq.q;
+            // Vdq_output.o = 0.0;      
         
-            Vab_output = Transform::rotation_to_clarke(Vdq_output, theta);
+            // Vab_output = Transform::rotation_to_clarke(Vdq_output, theta);
 
-            Vond = Vab_output.alpha;
-            duty_cycle = Vond /(2.0F * V_high_filt ) + 0.5F;
+            // Vond = Vab_output.alpha;
+            // duty_cycle = Vond /(2.0F * V_high_filt ) + 0.5F;
 
             if(mode == POWERMODE){
                 if (!pwm_enable)
