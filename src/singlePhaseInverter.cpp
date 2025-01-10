@@ -32,14 +32,17 @@
 singlePhaseInverter::singlePhaseInverter() : _w(0.0F) {}
 
 // Initialization function for singlePhaseInverter
-int8_t singlePhaseInverter::init(float32_t grid_Vpk, float32_t grid_w0, float32_t Ts) {
+int8_t singlePhaseInverter::init(inverter_mode mode, float32_t grid_Vpk, float32_t grid_w0, float32_t Ts) {
 
+    // parameters of the SOGI filter
     float32_t rise_time = 1.0F * 2.0F * PI / grid_w0;
     float32_t wn = 3.0F / rise_time;
     float32_t xsi = 0.7F;
     float32_t Kp = 2 * wn * xsi / grid_Vpk;
     float32_t Ki = (wn * wn) / grid_Vpk;
     float32_t Kr = 500.0;
+
+    _mode = mode;
 
     _grid_Vpk = grid_Vpk;
     _w = grid_w0;
@@ -48,19 +51,59 @@ int8_t singlePhaseInverter::init(float32_t grid_Vpk, float32_t grid_w0, float32_
     _theta = 0;
     _next_theta = 0;
 
-    sogi_v.init(Kr, _Ts);
-    sogi_i.init(Kr, _Ts);
+    _sogi_v.init(Kr, _Ts);
+    _sogi_i.init(Kr, _Ts);
 
-    pll_pi_params.Ts = Ts;
-    pll_pi_params.Td = 0.0;
-    pll_pi_params.N = 1;
-    pll_pi_params.Ti = Kp / Ki;
-    pll_pi_params.Kp = Kp;
-    pll_pi_params.lower_bound = -10.0F * _w_ref;
-    pll_pi_params.upper_bound = 10.0F * _w_ref;
+    _pll_pi_params.Ts = Ts;
+    _pll_pi_params.Td = 0.0;
+    _pll_pi_params.N = 1;
+    _pll_pi_params.Ti = Kp / Ki;
+    _pll_pi_params.Kp = Kp;
+    _pll_pi_params.lower_bound = -10.0F * _w_ref;
+    _pll_pi_params.upper_bound = 10.0F * _w_ref;
 
-    pll_pi.init(pll_pi_params);
-    pll_pi.reset(grid_w0);
+    _pll_pi.init(_pll_pi_params);
+    _pll_pi.reset(grid_w0);
+
+    _Idq_ref.d = 0.0;
+    _Idq_ref.q = 0.0;
+    _Vdq_ref.d = 0.0;
+    _Vdq_ref.q = 0.0;
+
+    _Idq_ref_max.d = 8.0;
+    _Idq_ref_max.q = 1.0;
+    _Idq_ref_min.d = -0.1;
+    _Idq_ref_min.q = -0.1;
+
+    _Vdq_ref_max.d = 30.0;
+    _Vdq_ref_max.q = 30.0;
+    _Vdq_ref_min.d = -0.1;
+    _Vdq_ref_min.q = -0.1;
+
+    _Idq_ref_delta.d = 0.0;
+    _Idq_ref_delta.q = 0.0;
+
+    _current_pi_params.Kp = 0.001;      // kp is 2* 66e-6 Henry/100e-3 seconds
+    _current_pi_params.Ti = 0.0003;      // Ti is 4*Taui = 400e-3
+    _current_pi_params.Td = 0.0;
+    _current_pi_params.N = 1.0;
+    _current_pi_params.upper_bound = 30;
+    _current_pi_params.lower_bound = -30;
+
+    _current_d_pi.init(_current_pi_params);
+    _current_q_pi.init(_current_pi_params);
+
+
+    _voltage_pi_params.Kp = 0.01;      // kp is 2* 66e-6 Henry/100e-3 seconds
+    _voltage_pi_params.Ti = 0.003;      // Ti is 4*Taui = 400e-3
+    _voltage_pi_params.Td = 0.0;
+    _voltage_pi_params.N = 1.0;
+    _voltage_pi_params.upper_bound = 30;
+    _voltage_pi_params.lower_bound = -30;
+
+    _voltage_d_pi.init(_voltage_pi_params);
+    _voltage_q_pi.init(_voltage_pi_params);
+
 
 
     return 0;  // Return 0 to indicate success
@@ -73,29 +116,48 @@ int8_t singlePhaseInverter::init(float32_t grid_Vpk, float32_t grid_w0, float32_
  * @param v_meas Measured grid voltage.
  */
 void singlePhaseInverter::calculatePll(float32_t v_meas) {
-    _theta = _next_theta;
-    _Vab = sogi_v.calc(v_meas,_w);
-    _Vdq = Transform::rotation_to_dqo(_Vab, _theta);
-    _w = _w_ref + pll_pi.calculateWithReturn(0, -1.0*_Vdq.q);
-    _next_theta = ot_modulo_2pi(_theta + _Ts * _w);
+
 }
 
 
 // Calculate function for singlePhaseInverter
-void singlePhaseInverter::calculatePower(float32_t v_meas, float32_t i_meas) {
+float32_t singlePhaseInverter::calculateDuty(float32_t vgrid_meas, float32_t igrid_meas) {
 
-    // Perform SOGI-PLL calculation
-    calculatePll(v_meas);
 
-    // Perform SOGI calculation for current
-    _Iab = sogi_i.calc(i_meas, _w);
+    // w = w0 + pi_pll.calculateWithReturn(0, -1.0*Vdq.q);
+    // theta = ot_modulo_2pi(theta + w * Ts);
 
-    // Transform current from alpha-beta to d-q
+    _w = _w_ref;
+
+    _theta = ot_modulo_2pi(_theta + _w * _Ts);  //grid forming code 
+
+
+    _Vab = _sogi_v.calc(vgrid_meas,_w);
+    _Iab = _sogi_i.calc(igrid_meas,_w);
+
+    _Vdq = Transform::rotation_to_dqo(_Vab, _theta);
     _Idq = Transform::rotation_to_dqo(_Iab, _theta);
 
-    // Calculate active and reactive power
-    _power.d = 0.5F * (_Vdq.d * _Idq.d + _Vdq.q * _Idq.q);
-    _power.q = 0.5F * (_Idq.d * _Vdq.q - _Idq.q * _Vdq.d);
+
+    _Idq_ref_delta.d = _voltage_d_pi.calculateWithReturn(_Vdq_ref.d, _Vdq.d); 
+    _Idq_ref_delta.q = _voltage_q_pi.calculateWithReturn(_Vdq_ref.q, _Vdq.q); 
+
+    _Vdq_output.d = _current_d_pi.calculateWithReturn(_Idq_ref.d + _Idq_ref_delta.d, _Idq.d); 
+    _Vdq_output.q = _current_q_pi.calculateWithReturn(_Idq_ref.q + _Idq_ref_delta.q, _Idq.q); 
+
+    _Vdq_output.d = _Vdq_output.d + _Vdq_ref.d; 
+    _Vdq_output.q = _Vdq_output.q + _Vdq_ref.q;
+
+    _Vab_output = Transform::rotation_to_clarke(_Vdq_output, _theta);
+
+    _Vond = _Vab_output.alpha;
+    _duty_cycle = _Vond /(2.0F * _V_bus ) + 0.5F;
+
+    return _duty_cycle;
+
+    // // Calculate active and reactive power
+    // _power.d = 0.5F * (_Vdq.d * _Idq.d + _Vdq.q * _Idq.q);
+    // _power.q = 0.5F * (_Idq.d * _Vdq.q - _Idq.q * _Vdq.d);
 }
 
 dqo_t singlePhaseInverter::getVdq(){
@@ -128,3 +190,19 @@ float32_t singlePhaseInverter::getTheta(){
 float32_t singlePhaseInverter::getw(){
     return _w;
 }
+
+void singlePhaseInverter::setVBus(float32_t V_bus){
+    _V_bus = V_bus;
+}
+
+void singlePhaseInverter::setIdqRef(dqo_t Idq_ref){
+    _Idq_ref = Idq_ref;
+}
+
+void singlePhaseInverter::setVdqRef(dqo_t Vdq_ref){
+    _Vdq_ref = Vdq_ref;
+}
+
+
+
+

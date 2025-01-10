@@ -32,19 +32,25 @@
 #include "transform.h"
 
 
+typedef enum {
+    FORMING = 0,
+    FOLLOWING=1
+}inverter_mode;
+
+
 class singlePhaseInverter {
 public:
     // Constructor
     singlePhaseInverter();
 
     // Initialization function
-    int8_t init(float32_t grid_Vpk, float32_t grid_w0, float32_t Ts);
+    int8_t init(inverter_mode mode, float32_t grid_Vpk, float32_t grid_w0, float32_t Ts);
 
     // Reset function
     void reset();
 
     // Calculate function
-    void calculatePower(float32_t v, float32_t i);
+    float32_t calculateDuty(float32_t vgrid_meas, float32_t igrid_meas);
 
     void calculatePll(float32_t v_meas);
 
@@ -62,28 +68,69 @@ public:
 
     float32_t getTheta();
 
+    void setVBus(float32_t V_bus);
+
+    void setVdqRef(dqo_t Vdq_ref);
+
+    void setIdqRef(dqo_t Idq_ref);
+
 
 private:
     // Internal state variables
-    clarke_t _Iab;
-    clarke_t _Vab;
-    dqo_t _Idq;
-    dqo_t _Vdq;
+    inverter_mode _mode;
+
     dqo_t _power;
 
+    dqo_t _Vdq;
+    dqo_t _Vdq_ref;
+    dqo_t _Vdq_ref_max;
+    dqo_t _Vdq_ref_min;
+    dqo_t _Vdq_output;
+
+    dqo_t _Idq;
+    dqo_t _Idq_ref;
+    dqo_t _Idq_ref_max;
+    dqo_t _Idq_ref_min;
+    dqo_t _Idq_ref_delta;
+
+    float32_t _Id_ref_delta = 0.0;
+    float32_t _Iq_ref_delta = 0.0;
+    float32_t _Vd_ref_max = 20.0;
+    float32_t _Vd_ref_min = 0.0;
+
+    clarke_t _Vab;
+    clarke_t _Vab_output;
+    clarke_t _Iab;
+    float32_t _Vond;
+
+    float32_t _R_load = 10;
 
     float32_t _grid_Vpk;
     float32_t _grid_w0;
     float32_t _Ts;
 
-    Sogi sogi_i;
-    Sogi sogi_v;
-    PidParams pll_pi_params;    ///< PI controller parameters.
-    Pid pll_pi;                 ///< PI controller.
+    Sogi _sogi_i;
+    Sogi _sogi_v;
+    PidParams _pll_pi_params;    ///< PI controller parameters.
+    Pid _pll_pi;                 ///< PI controller.
+
+    PidParams _current_pi_params;    ///< PI controller parameters for the current loop.
+    Pid _current_d_pi;                 ///< PI controller for the current loop.
+    Pid _current_q_pi;                 ///< PI controller for the current loop.
+
+    PidParams _voltage_pi_params;    ///< PI controller parameters for the voltage loop.
+    Pid _voltage_d_pi;                 ///< PI controller for the voltage loop.
+    Pid _voltage_q_pi;                 ///< PI controller for the voltage loop.
+
+
     float32_t _theta;        ///< Current phase angle.
     float32_t _next_theta;   ///< Next phase angle.
     float32_t _w;            ///< Angular frequency.
     float32_t _w_ref;        ///< Reference angular frequency.
+
+    float32_t _duty_cycle;   ///< Internal duty cycle.
+
+    float32_t _V_bus;   ///< Internal bus voltage.
 
 
 };
