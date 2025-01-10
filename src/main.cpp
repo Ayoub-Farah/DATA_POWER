@@ -174,7 +174,7 @@ static uint32_t critical_task_counter;
 
 // the scope help us to record datas during the critical task
 // its a library which must be included in platformio.ini
-static ScopeMimicry scope(1024, 8);
+static ScopeMimicry scope(1024, 11);
 static bool is_downloading;
 static bool trigger = false;
 //---------------------------------------------------------------
@@ -270,6 +270,7 @@ void setup_routine()
 	scope.connectChannel(Vab.alpha, "Valpha");
 	scope.connectChannel(Vdq.q, "Vdq.q");
 	scope.connectChannel(w, "omega");
+	scope.connectChannel(theta, "theta");
     scope.set_delay(0.0F);
     scope.set_trigger(a_trigger);
     scope.start();
@@ -280,7 +281,7 @@ void setup_routine()
     // ac_meas_config.w0 = w0;
     // ac_meas_config.Ts = Ts;
 
-    inverter.init(FORMING, Udc, Udc, w0, Ts);
+    inverter.init(FOLLOWING, Udc, Udc, w0, Ts);
 
     sogi_v.init(500.0, Ts);
     sogi_i.init(500.0, Ts);
@@ -385,24 +386,28 @@ void loop_communication_task()
 				{
 					Idq_ref.d += 0.1F;
 				}
+                inverter.setIdqRef(Idq_ref);
             break;
         case 'j':
 				if (Idq_ref.d > Idq_ref_min.d)
 				{
 					Idq_ref.d -= 0.1F;
 				}
+                inverter.setIdqRef(Idq_ref);
             break;
         case 'd':
 				if (Idq_ref.d < Idq_ref_max.d)
 				{
 					Idq_ref.d += 0.5F;
 				}
+                inverter.setIdqRef(Idq_ref);
             break;
         case 'c':
 				if (Idq_ref.d > Idq_ref_min.d)
 				{
 					Idq_ref.d -= 0.5F;
 				}
+                inverter.setIdqRef(Idq_ref);
             break;
         case 'r':
             is_downloading = true;
@@ -547,6 +552,8 @@ void loop_critical_task()
             shield.power.stop(ALL);
             spin.led.turnOff();
             pwm_enable = false;
+            inverter.setPowerOn(false);
+            inverter.setSyncOff();
         }
         Vgrid_amplitude = 0.F;
         duty_cycle = DUTY_MIN;
@@ -561,13 +568,21 @@ void loop_critical_task()
                 shield.power.stop(ALL);
                 spin.led.turnOff();
                 pwm_enable = false;
+                inverter.setPowerOn(false);
             }
         }
+
+        inverter.setVBus(V_high_filt);
 
         duty_cycle = inverter.calculateDuty(Vgrid_meas, Igrid_meas);
 
         Vdq = inverter.getVdq();
+        Vab = inverter.getVab();
+        Idq = inverter.getIdq();
         w = inverter.getw();
+        theta = inverter.getTheta();
+        is_net_synchronized = inverter.getSync();
+
 
         // w = w0 + pi_pll.calculateWithReturn(0, -1.0*Vdq.q);
         // theta = ot_modulo_2pi(theta + w * Ts);
@@ -582,24 +597,23 @@ void loop_critical_task()
         // Idq = Transform::rotation_to_dqo(Iab, theta);
 
 
-		if (Vdq.q < sync_power_tolerance &&
-			Vdq.q > -sync_power_tolerance && 
-            critical_task_counter > 1000)
-		{
-			is_net_synchronized = true;
-		}
+		// if (Vdq.q < sync_power_tolerance &&
+		// 	Vdq.q > -sync_power_tolerance && 
+        //     critical_task_counter > 1000)
+		// {
+		// 	is_net_synchronized = true;
+		// }
 
 
         if(is_net_synchronized){
 
-            inverter.setIdqRef(Idq_ref);
 
             // original code
             // Idq_ref_delta.d = pi_voltage_d.calculateWithReturn(Vdq_ref.d, Vdq.d); 
             // Idq_ref_delta.q = pi_voltage_q.calculateWithReturn(Vdq_ref.q, Vdq.q); 
 
 
-            // // current test
+            // // // current test
             // Idq_ref_delta.d = 0.0; 
             // Idq_ref_delta.q = 0.0; 
 
@@ -617,7 +631,7 @@ void loop_critical_task()
             // // Vdq_output.d = Vdq_output.d + Vdq_ref.d; 
             // // Vdq_output.q = Vdq_output.q + Vdq_ref.q;
 
-            // current test
+            // // current test
             // Vdq_output.d = Vdq_output.d + Vdq.d; 
             // Vdq_output.q = Vdq_output.q + Vdq.q;
             // Vdq_output.o = 0.0;      
@@ -632,6 +646,7 @@ void loop_critical_task()
                 {
                     shield.power.start(ALL);
                     pwm_enable = true;
+                    inverter.setPowerOn(true);
                 }
                 shield.power.setDutyCycle(ALL, duty_cycle);
             }
