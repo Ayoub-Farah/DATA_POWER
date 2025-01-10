@@ -141,8 +141,8 @@ static float32_t Ts = control_task_period * 1.0e-6F;
 
 // static float32_t kp = 0.000215;
 // static float32_t Ti = 0.2*7.5175e-5;
-static float32_t kp = 0.01;      // kp is 2* 66e-6 Henry/100e-3 seconds
-static float32_t Ti = 0.003;      // Ti is 4*Taui = 400e-3
+static float32_t kp = 0.001;      // kp is 2* 66e-6 Henry/100e-3 seconds
+static float32_t Ti = 0.0003;      // Ti is 4*Taui = 400e-3
 float32_t Td = 0.0;
 float32_t N = 1.0;
 float32_t upper_bound = 30;
@@ -174,7 +174,7 @@ static uint32_t critical_task_counter;
 
 // the scope help us to record datas during the critical task
 // its a library which must be included in platformio.ini
-static ScopeMimicry scope(1024, 20);
+static ScopeMimicry scope(1024, 8);
 static bool is_downloading;
 static bool trigger = false;
 //---------------------------------------------------------------
