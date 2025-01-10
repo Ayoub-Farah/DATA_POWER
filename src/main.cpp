@@ -277,7 +277,7 @@ void setup_routine()
     // ac_meas_config.w0 = w0;
     // ac_meas_config.Ts = Ts;
 
-    inverter.init(FORMING, Udc, w0, Ts);
+    inverter.init(FOLLOWING, Udc, Udc, w0, Ts);
 
     sogi_v.init(500.0, Ts);
     sogi_i.init(500.0, Ts);
@@ -296,8 +296,6 @@ void setup_routine()
     Vdq_ref_max.q = 30.0;
     Vdq_ref_min.d = -0.1;
     Vdq_ref_min.q = -0.1;
-
-
 
     Idq_ref_delta.d = 0.0;
     Idq_ref_delta.q = 0.0;
@@ -534,9 +532,12 @@ void loop_critical_task()
     }
     if (mode == POWERMODE)
     {
+
+        inverter.setVdqRef(Vdq_ref);
+
         duty_cycle = inverter.calculateDuty(Vgrid_meas,Igrid_meas); 
-        
-        // Vdq = inverter.getVdq();
+
+        Vdq = inverter.getVdq();
 
 		// if (Vdq.q < sync_power_tolerance &&
 		// 	Vdq.q > -sync_power_tolerance && 
