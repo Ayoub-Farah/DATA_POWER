@@ -32,7 +32,7 @@
 singlePhaseInverter::singlePhaseInverter() : _w(0.0F) {}
 
 // Initialization function for singlePhaseInverter
-int8_t singlePhaseInverter::init(inverter_mode mode, float32_t grid_Vpk, float32_t grid_w0, float32_t Ts) {
+int8_t singlePhaseInverter::init(inverter_mode mode, float32_t V_bus, float32_t grid_Vpk, float32_t grid_w0, float32_t Ts) {
 
     // parameters of the SOGI filter
     float32_t rise_time = 1.0F * 2.0F * PI / grid_w0;
@@ -50,6 +50,8 @@ int8_t singlePhaseInverter::init(inverter_mode mode, float32_t grid_Vpk, float32
     _Ts = Ts;
     _theta = 0;
     _next_theta = 0;
+    _V_bus = V_bus;
+
 
     _sogi_v.init(Kr, _Ts);
     _sogi_i.init(Kr, _Ts);
@@ -103,8 +105,6 @@ int8_t singlePhaseInverter::init(inverter_mode mode, float32_t grid_Vpk, float32
 
     _voltage_d_pi.init(_voltage_pi_params);
     _voltage_q_pi.init(_voltage_pi_params);
-
-
 
     return 0;  // Return 0 to indicate success
 }
