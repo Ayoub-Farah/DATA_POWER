@@ -277,7 +277,7 @@ void setup_routine()
     // ac_meas_config.w0 = w0;
     // ac_meas_config.Ts = Ts;
 
-    // inverter.init(10.0, w0, Ts);
+    inverter.init(FORMING, Udc, w0, Ts);
 
     sogi_v.init(500.0, Ts);
     sogi_i.init(500.0, Ts);
@@ -534,41 +534,53 @@ void loop_critical_task()
     }
     if (mode == POWERMODE)
     {
-        theta = ot_modulo_2pi(theta + w0 * Ts);
-
-        Vab = sogi_v.calc(Vgrid_meas,w0);
-        Iab = sogi_i.calc(Igrid_meas,w0);
-        Vdq = Transform::rotation_to_dqo(Vab, theta);
-        Idq = Transform::rotation_to_dqo(Iab, theta);
-
-        // original code
-        Idq_ref_delta.d = pi_voltage_d.calculateWithReturn(Vdq_ref.d, Vdq.d); 
-        Idq_ref_delta.q = pi_voltage_q.calculateWithReturn(Vdq_ref.q, Vdq.q); 
-
-        // current test
-        // Idq_ref_delta.d = 0.0; 
-        // Idq_ref_delta.q = 0.0; 
-
-
-        Vdq_output.d = pi_current_d.calculateWithReturn(Idq_ref.d + Idq_ref_delta.d, Idq.d); 
-        Vdq_output.q = pi_current_q.calculateWithReturn(Idq_ref.q + Idq_ref_delta.q, Idq.q); 
+        duty_cycle = inverter.calculateDuty(Vgrid_meas,Igrid_meas); 
         
-        // original code
-        Vdq_output.d = Vdq_output.d + Vdq_ref.d; 
-        Vdq_output.q = Vdq_output.q + Vdq_ref.q;
+        // Vdq = inverter.getVdq();
 
-        // current test
-        // Vdq_output.d = Vdq_output.d + Idq_ref.d*R_load; 
-        // Vdq_output.q = Vdq_output.q + Idq_ref.q;
+		// if (Vdq.q < sync_power_tolerance &&
+		// 	Vdq.q > -sync_power_tolerance && 
+        //     critical_task_counter > 1000)
+		// {
+		// 	is_net_synchronized = true;
+		// }
 
-
-        Vdq_output.o = 0.0;      
-       
-        Vab_output = Transform::rotation_to_clarke(Vdq_output, theta);
-
-        Vond = Vab_output.alpha;
-        duty_cycle = Vond /(2.0F * V_high_filt ) + 0.5F;
         shield.power.setDutyCycle(ALL, duty_cycle);
+
+        // theta = ot_modulo_2pi(theta + w0 * Ts);
+
+        // Vab = sogi_v.calc(Vgrid_meas,w0);
+        // Iab = sogi_i.calc(Igrid_meas,w0);
+        // Vdq = Transform::rotation_to_dqo(Vab, theta);
+        // Idq = Transform::rotation_to_dqo(Iab, theta);
+
+        // // original code
+        // Idq_ref_delta.d = pi_voltage_d.calculateWithReturn(Vdq_ref.d, Vdq.d); 
+        // Idq_ref_delta.q = pi_voltage_q.calculateWithReturn(Vdq_ref.q, Vdq.q); 
+
+        // // current test
+        // // Idq_ref_delta.d = 0.0; 
+        // // Idq_ref_delta.q = 0.0; 
+
+
+        // Vdq_output.d = pi_current_d.calculateWithReturn(Idq_ref.d + Idq_ref_delta.d, Idq.d); 
+        // Vdq_output.q = pi_current_q.calculateWithReturn(Idq_ref.q + Idq_ref_delta.q, Idq.q); 
+        
+        // // original code
+        // Vdq_output.d = Vdq_output.d + Vdq_ref.d; 
+        // Vdq_output.q = Vdq_output.q + Vdq_ref.q;
+
+        // // current test
+        // // Vdq_output.d = Vdq_output.d + Idq_ref.d*R_load; 
+        // // Vdq_output.q = Vdq_output.q + Idq_ref.q;
+
+
+        // Vdq_output.o = 0.0;      
+       
+        // Vab_output = Transform::rotation_to_clarke(Vdq_output, theta);
+
+        // Vond = Vab_output.alpha;
+        // duty_cycle = Vond /(2.0F * V_high_filt ) + 0.5F;
 
 
 		// // trigger = true;
