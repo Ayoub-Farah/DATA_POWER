@@ -134,17 +134,12 @@ void setup_routine()
     shield.power.initBuck(LEG1);
     shield.power.initBuck(LEG2);
 
+    shield.power.setDutyCycleMin(0.0);
+    shield.power.setDutyCycleMax(1.0);
+
     spin.gpio.configurePin(PHASE_GPIO,OUTPUT);
     // spin.gpio.configurePin(PWM_GPIO,OUTPUT);
 
-#ifdef CONFIG_SHIELD_OWNVERTER
-    shield.power.initBuck(LEG3);
-#endif
-
-
-#ifdef CONFIG_SHIELD_OWNVERTER
-    shield.sensors.enableDefaultOwnverterSensors();
-#endif
 
 #ifdef CONFIG_SHIELD_TWIST
     shield.sensors.enableDefaultTwistSensors();
@@ -157,9 +152,6 @@ void setup_routine()
 
     pid1.init(pid_params);
     pid2.init(pid_params);
-#ifdef CONFIG_SHIELD_OWNVERTER
-    pid3.init(pid_params);
-#endif
 
     // communication.analog.init();
     // communication.sync.initSlave();
