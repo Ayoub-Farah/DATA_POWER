@@ -79,11 +79,11 @@ try:
   message1 = Shield.sendCommand("IDLE")
   print(message1)
 
-  message = Shield.sendCommand( "BUCK", "LEG1", "OFF")
-  print(message)
+  # message = Shield.sendCommand( "BUCK", "LEG1", "OFF")
+  # print(message)
 
-  message = Shield.sendCommand( "BUCK", "LEG2", "OFF")
-  print(message)
+  # message = Shield.sendCommand( "BUCK", "LEG2", "OFF")
+  # print(message)
 
   message = Shield.sendCommand("LEG","LEG1","ON")
   print(message)
@@ -94,11 +94,41 @@ try:
   message = Shield.sendCommand("POWER_ON")
   print(message)
 
-  message = Shield.sendCommand("DUTY","LEG1",1.0)
+  message = Shield.sendCommand("FREQUENCY","LEG1",100000)
+  print(message)
+  message = Shield.sendCommand("FREQUENCY","LEG2",100000)
   print(message)
 
-  message = Shield.sendCommand("DUTY","LEG2",1.0)
+  message = Shield.sendCommand("DUTY","LEG1",0.0, delay = 0.5)
   print(message)
+
+  message = Shield.sendCommand("DUTY","LEG2",0.0, delay = 0.5)
+  print(message)
+
+  message = Shield.sendCommand("DUTY","LEG1",0.0, delay = 0.5)
+  print(message)
+
+  message = Shield.sendCommand("DUTY","LEG2",0.0, delay = 0.5)
+  print(message)
+
+  message = Shield.sendCommand("DUTY","LEG1",0.5, delay = 0.5)
+  print(message)
+
+  message = Shield.sendCommand("DUTY","LEG2",0.5, delay = 0.5)
+  print(message)
+
+
+  message = Shield.sendCommand("DUTY","LEG1",0.999, delay = 0.5)
+  print(message)
+
+  message = Shield.sendCommand("DUTY","LEG2",0.999, delay = 0.5)
+  print(message)
+    
+
+  for i in range(0,80): 
+     message = Shield.getLine()
+     print(message)
+
 
   # duty_cycle = 0.5  # Initial duty cycle value
 
@@ -118,6 +148,7 @@ try:
 
 finally:
   # message1 = Shield.sendCommand("IDLE")
-  print(message1)
+  # print(message1)
+  print("END")
 
 
