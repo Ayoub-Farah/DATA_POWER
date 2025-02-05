@@ -94,10 +94,10 @@ try:
   message = Shield.sendCommand("POWER_ON")
   print(message)
 
-  message = Shield.sendCommand("DUTY","LEG1",0.5)
+  message = Shield.sendCommand("DUTY","LEG1",1.0)
   print(message)
 
-  message = Shield.sendCommand("DUTY","LEG2",0.50001)
+  message = Shield.sendCommand("DUTY","LEG2",1.0)
   print(message)
 
   # duty_cycle = 0.5  # Initial duty cycle value
@@ -105,12 +105,12 @@ try:
   # user_input = input("Press enter to continue")
 
 
-  message1 = Shield.sendCommand("PHASE_SHIFT","LEG2",0)
-  print(message1)
+  # message1 = Shield.sendCommand("PHASE_SHIFT","LEG2",0)
+  # print(message1)
 
-  for phase_shift_value in range(180, 0, -10):  # Example values from 0 to 170 with a step of 10
-      message1 = Shield.sendCommand("PHASE_SHIFT", "LEG2", phase_shift_value)
-      print(f"Sent command with phase shift: {phase_shift_value}, message: {message1}")
+  # for phase_shift_value in range(180, 0, -10):  # Example values from 0 to 170 with a step of 10
+  #     message1 = Shield.sendCommand("PHASE_SHIFT", "LEG2", phase_shift_value)
+  #     print(f"Sent command with phase shift: {phase_shift_value}, message: {message1}")
 
 
 
