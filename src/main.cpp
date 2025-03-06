@@ -494,6 +494,16 @@ void setup_routine()
 	shield.power.initBuck(ALL);
 	shield.sensors.enableDefaultOwnverterSensors();
 
+    shield.sensors.setConversionParametersLinear(V1_LOW,0.0513937134094877,-99.81831671778261   );
+    shield.sensors.setConversionParametersLinear(V2_LOW,0.05176364848841735,-100.18487372694851 );
+    shield.sensors.setConversionParametersLinear(V3_LOW,0.05130754448322653,-99.90662375911359  );
+    shield.sensors.setConversionParametersLinear(V_HIGH,0.028585591456274668,2.564582060162749  );
+    shield.sensors.setConversionParametersLinear(I1_LOW,0.01011000917925166,-20.194898856128685 );
+    shield.sensors.setConversionParametersLinear(I2_LOW,0.009573005525177453,-18.95900696851234 );
+    shield.sensors.setConversionParametersLinear(I3_LOW,0.00988678047895755,-19.544379045764682 );
+    shield.sensors.setConversionParametersLinear(I_HIGH,-0.009624807234262563,19.232911369709534);
+
+
 	// spin.gpio.configurePin(HALL1, INPUT);
 	// spin.gpio.configurePin(HALL2, INPUT);
 	// spin.gpio.configurePin(HALL3, INPUT);
@@ -502,18 +512,18 @@ void setup_routine()
 
 	/* Scope configuration */
 	// scope.connectChannel(V12_value, "V12_value");           /* 0 */
-	// scope.connectChannel(Vq, "Vq");                         /* 1 */
-	// scope.connectChannel(Vd, "Vd");                         /* 2 */
+	scope.connectChannel(Vq, "Vq");                         /* 1 */
+	scope.connectChannel(Vd, "Vd");                         /* 2 */
 	scope.connectChannel(V1_low_value, "V1_low_value");     /* 3 */
 	scope.connectChannel(V2_low_value, "V2_low_value");     /* 4 */
 	scope.connectChannel(I1_low_value, "I1_low_value");     /* 3 */
 	scope.connectChannel(I2_low_value, "I2_low_value");     /* 4 */
 	scope.connectChannel(I_high, "I_high_value");     	    /* 5 */
-	// scope.connectChannel(Iq_meas, "Iq_meas");               /* 6 */
+	scope.connectChannel(Iq_meas, "Iq_meas");               /* 6 */
 	scope.connectChannel(angle_filtered, "angle_filtered"); /* 7 */
-	scope.connectChannel(encoder_value_raw_float, "enc_raw"); /* 7 */
-	scope.connectChannel(encoder_value_minus_offset_float, "enc_offset"); /* 7 */
-	scope.connectChannel(encoder_normalized, "enc_norm"); /* 7 */
+	// scope.connectChannel(encoder_value_raw_float, "enc_raw"); /* 7 */
+	// scope.connectChannel(encoder_value_minus_offset_float, "enc_offset"); /* 7 */
+	// scope.connectChannel(encoder_normalized, "enc_norm"); /* 7 */
 	// scope.connectChannel(Ib_ref, "Ib_ref");                 /* 8 */
 	// scope.connectChannel(hall_angle, "hall_angle");         /* 9 */
 	// scope.connectChannel(Ia_ref, "Ia_ref");                 /* 10 */
