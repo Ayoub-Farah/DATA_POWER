@@ -112,6 +112,10 @@ static dqo_t Idq;
 static dqo_t Idq_ref;
 static float32_t angle_4_control;
 static float32_t v_ref;
+static float32_t Vmin;
+static float32_t Vmax;
+static float32_t compensation;
+
 
 /* Variables used to get static value for ScopeMimicry */
 static three_phase_t Iabc_ref;
@@ -422,10 +426,21 @@ inline void control_torque()
  */
 inline void compute_duties()
 {
-	inverse_Vhigh = 1.0 / MIN_DC_VOLTAGE;
-	duty_abc.a = (Vabc.a * inverse_Vhigh + 0.5);
-	duty_abc.b = (Vabc.b * inverse_Vhigh + 0.5);
-	duty_abc.c = (Vabc.c * inverse_Vhigh + 0.5);
+	inverse_Vhigh = 1.0 / V_high_filtered;
+    
+    Vmin = Vabc.a;
+    Vmax = Vabc.a;
+
+    if(Vmin>Vabc.b) Vmin = Vabc.b;
+    if(Vmin>Vabc.c) Vmin = Vabc.c;
+    if(Vmax<Vabc.b) Vmax = Vabc.b;
+    if(Vmax<Vabc.c) Vmax = Vabc.c;
+
+    compensation = 0.5 * (1 - ((Vmin+Vmax)*inverse_Vhigh) );
+    
+	duty_abc.a = (Vabc.a * inverse_Vhigh + compensation);
+	duty_abc.b = (Vabc.b * inverse_Vhigh + compensation);
+	duty_abc.c = (Vabc.c * inverse_Vhigh + compensation);
 }
 
 /**
@@ -514,9 +529,9 @@ void setup_routine()
 	// scope.connectChannel(V12_value, "V12_value");           /* 0 */
 	scope.connectChannel(Vq, "Vq");                         /* 1 */
 	scope.connectChannel(Vd, "Vd");                         /* 2 */
-	scope.connectChannel(V1_low_value, "V1_low_value");     /* 3 */
-	scope.connectChannel(V2_low_value, "V2_low_value");     /* 4 */
-	scope.connectChannel(I1_low_value, "I1_low_value");     /* 3 */
+	scope.connectChannel(duty_abc.a, "duty_a");     /* 3 */
+	scope.connectChannel(duty_abc.b, "duty_b");     /* 4 */
+	scope.connectChannel(duty_abc.c, "duty_c");     /* 3 */
 	scope.connectChannel(I2_low_value, "I2_low_value");     /* 4 */
 	scope.connectChannel(I_high, "I_high_value");     	    /* 5 */
 	scope.connectChannel(Iq_meas, "Iq_meas");               /* 6 */
