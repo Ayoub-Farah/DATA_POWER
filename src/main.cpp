@@ -482,7 +482,8 @@ void loop_control_task()
 
                         // ramp up the duty cycle
                         if ((cpt>= cpt_step_begin) && (cpt <= cpt_step_begin+1)) {
-                            duty_cycle += duty_cyle_step; 
+                            // duty_cycle += duty_cyle_step; 
+                            duty_cycle = duty_cycle_70_perc;
                             shield.power.setDutyCycle(test_leg, duty_cycle);
                             power_leg_settings[test_leg].duty_cycle = duty_cycle;
                         }
