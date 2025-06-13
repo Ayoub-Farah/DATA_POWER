@@ -179,13 +179,10 @@ void setup_routine()
     CommTask_num = task.createBackground(loop_communication_task);
     task.createCritical(&loop_control_task, control_task_period);
 
-    communication.sync.initMaster(); // start the synchronisation
+    communication.sync.initSlave(); // start the synchronisation
 
     communication.analog.init();
-    communication.analog.setAnalogCommValue(2050);    
-
     /* Sets up the CAN communication protocol for testing */
-    communication.can.setCtrlEnable(true);
 
 
     pid1.init(pid_params);
@@ -369,7 +366,7 @@ void loop_control_task()
 
     /* Use the following function to send a control reference over CAN */
     can_test_ctrl_enable = communication.can.getCtrlEnable();
-    can_test_ctrl_enable = communication.can.getCtrlReference();
+    reference_value = communication.can.getCtrlReference();
 
     // ------------- GET SENSOR MEASUREMENTS ---------------------
     meas_data = shield.sensors.getLatestValue(V1_LOW);
