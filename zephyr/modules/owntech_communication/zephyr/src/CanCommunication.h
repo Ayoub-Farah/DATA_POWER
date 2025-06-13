@@ -72,7 +72,7 @@ public:
 	 *
 	 * @return A boolean that is 1 is current order is start, 0 if stop.
 	 */
-	static float32_t getStartStopState();
+	static bool getStartStopState();
 	/**
 	 * @brief Get the control period.
 	 *

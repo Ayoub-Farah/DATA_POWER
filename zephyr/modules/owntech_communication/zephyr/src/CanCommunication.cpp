@@ -63,7 +63,7 @@ float32_t CanCommunication::getCtrlReference()
     return ctrl_reference_value;
 }
 
-float32_t CanCommunication::getStartStopState()
+bool CanCommunication::getStartStopState()
 {
     return start_stop;
 }
