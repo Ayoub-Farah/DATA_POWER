@@ -176,6 +176,9 @@ void setup_routine()
                                   master_reception_function, 
                                   SPEED_20M); // custom configuration for RS485
 
+    communication.rs485.turnOnCommunication();
+
+
     /* Sets up the HALL sensors for testing */
 	spin.gpio.configurePin(HALL1, OUTPUT);
 	spin.gpio.configurePin(HALL2, OUTPUT);
