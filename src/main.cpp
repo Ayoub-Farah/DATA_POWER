@@ -184,6 +184,7 @@ void setup_routine()
     communication.analog.init();
     /* Sets up the CAN communication protocol for testing */
 
+    communication.can.setCtrlEnable(true);
 
     pid1.init(pid_params);
     pid2.init(pid_params);
@@ -200,6 +201,8 @@ void setup_routine()
                                   sizeof(ConsigneStruct_t), 
                                   slave_reception_function, 
                                   SPEED_20M); // custom configuration for RS485
+
+    communication.rs485.turnOnCommunication();
 
     /* Sets up the HALL sensors for testing */
 	spin.gpio.configurePin(HALL1, INPUT);
@@ -223,6 +226,8 @@ void loop_communication_task()
 
 void loop_application_task()
 {
+
+    communication.can.getStartStopState();
 
     switch(mode)
     {
