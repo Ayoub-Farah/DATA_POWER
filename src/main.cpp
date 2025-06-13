@@ -286,7 +286,7 @@ void loop_application_task()
 void loop_control_task()
 {
     /* Use the following function to send a control reference over CAN */
-    communication.can.setCtrlReference(CAN_Bus_receive_ref);
+    communication.can.setCtrlReference((float32_t)CAN_Bus_receive_ref);
 
     // ------------- GET SENSOR MEASUREMENTS ---------------------
     meas_data = shield.sensors.getLatestValue(V1_LOW);
