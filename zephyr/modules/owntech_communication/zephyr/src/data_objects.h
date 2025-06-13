@@ -51,7 +51,7 @@ char hardware_version[] = HW_VER;
 char firmware_version[] = "1.0.0";
 
 /* Store value of reference (master-slave mode) */
-float32_t reference_value = 0;
+float32_t ctrl_reference_value = 0;
 bool      start_stop = false;
 
 /*
@@ -93,7 +93,7 @@ THINGSET_ADD_SUBSET(ID_ROOT, 0x38, "mCAN", SUBSET_CAN,
 THINGSET_ADD_GROUP(ID_ROOT, ID_CTRL, "Control", THINGSET_NO_CALLBACK);
 
 THINGSET_ADD_ITEM_FLOAT(ID_CTRL, ID_CTRL_REFERENCE, "zCtrlReference",
-                        &reference_value, 1, THINGSET_ANY_RW, SUBSET_CTRL);
+                        &ctrl_reference_value, 1, THINGSET_ANY_RW, SUBSET_CTRL);
 
 THINGSET_ADD_ITEM_BOOL(ID_CTRL, ID_CTRL_ENABLE, "zStartStop", &start_stop,
                        THINGSET_ANY_RW, SUBSET_CTRL);

@@ -51,7 +51,7 @@ extern uint32_t live_reporting_period;
 #ifdef CONFIG_THINGSET_CAN_CONTROL_REPORTING
 
 extern bool      start_stop;
-extern float32_t reference_value;
+extern float32_t ctrl_reference_value;
 
 bool CanCommunication::getCtrlEnable()
 {
@@ -60,7 +60,7 @@ bool CanCommunication::getCtrlEnable()
 
 float32_t CanCommunication::getCtrlReference()
 {
-    return reference_value;
+    return ctrl_reference_value;
 }
 
 float32_t CanCommunication::getStartStopState()
@@ -80,7 +80,7 @@ void CanCommunication::setCtrlEnable(bool enable)
 
 void CanCommunication::setCtrlReference(float32_t reference)
 {
-    reference_value = reference;
+    ctrl_reference_value = reference;
 }
 
 void CanCommunication::stopSlaveDevice()
