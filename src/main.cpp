@@ -44,7 +44,7 @@
 #define HALL2 PC8
 #define HALL3 PC9
 
-#define SIN PB4
+#define SIN PA3
 #define COS PB5
 
 
