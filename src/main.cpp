@@ -158,6 +158,7 @@ void setup_routine()
 
     /* Sets up the CAN communication protocol for testing */
     communication.can.setCtrlEnable(true);
+    communication.can.setCanNodeAddr(CAN_MASTER_ADDR);
 
 
     pid1.init(pid_params);
@@ -330,8 +331,6 @@ void loop_control_task()
     if (meas_data != NO_VALUE)
         analog_value = meas_data;
 
-    ctrl_slave_counter++;
-
     //----------- DEPLOYS MODES----------------
     switch(mode){
         case IDLE:         // IDLE and POWER_OFF modes turn the power off
@@ -343,6 +342,16 @@ void loop_control_task()
             shield.power.stop(LEG2);
             pwm_enable_leg_2 = false;
             V2_max  = 0;
+
+            rs485_send = 125;
+
+            /* writting rs485 value */
+            tx_consigne.test_RS485 = rs485_send;
+
+            counter_time++; /* Counts time to not start immediately */
+            if (counter_time > 50) test_start =  true; /* Starts the test after 50 periods */
+
+            communication.rs485.startTransmission();
 
 #ifdef CONFIG_SHIELD_OWNVERTER
             shield.power.stop(LEG3);
