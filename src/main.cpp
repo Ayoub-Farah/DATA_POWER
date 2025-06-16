@@ -184,6 +184,7 @@ void setup_routine()
     communication.analog.init();
     /* Sets up the CAN communication protocol for testing */
 
+    communication.can.setCanNodeAddr(CAN_SLAVE_ADDR);
     communication.can.setCtrlEnable(true);
 
     pid1.init(pid_params);
@@ -302,13 +303,13 @@ void hall_sensor_testing(){
 
     for(uint8_t hall_count = 0; hall_count<HALL_NUM;hall_count++){
         /* Counts the number of transitions in the rising and falling edges of the HALL sensors */
-        if(hall_now[hall_count] > hall_before[hall_count]){
+        if(hall_now[hall_count] > hall_before[hall_count]+10){
             hall_rising_edge_count[hall_count]++;
             /* If there are enough transitions, it considers to be good */
             if(hall_rising_edge_count[hall_count]>10){
                 hall_rising_edge_success[hall_count] = 1;
             }
-        }else if(hall_now[hall_count] < hall_before[hall_count]){
+        }else if(hall_now[hall_count] < hall_before[hall_count]-10){
             hall_falling_edge_count[hall_count]++;
             /* If there are enough transitions, it considers to be good */
             if(hall_falling_edge_count[hall_count]>10){
@@ -330,13 +331,13 @@ void sin_cos_sensor_testing(){
 
     for(uint8_t sin_cos_count = 0; sin_cos_count<SIN_COS_NUM;sin_cos_count++){
         /* Counts the number of transitions in the rising and falling edges of the SIN/COS sensors */
-        if(sin_cos_now[sin_cos_count] > sin_cos_before[sin_cos_count]){
+        if(sin_cos_now[sin_cos_count] > sin_cos_before[sin_cos_count] + 10){
             sin_cos_rising_edge_count[sin_cos_count]++;
             /* If there are enough transitions, it considers to be good */
             if(sin_cos_rising_edge_count[sin_cos_count]>10){
                 sin_cos_rising_edge_success[sin_cos_count] = 1;
             }
-        }else if(sin_cos_now[sin_cos_count] < sin_cos_before[sin_cos_count]){
+        }else if(sin_cos_now[sin_cos_count] < sin_cos_before[sin_cos_count] - 10){
             sin_cos_falling_edge_count[sin_cos_count]++;
             /* If there are enough transitions, it considers to be good */
             if(sin_cos_falling_edge_count[sin_cos_count]>10){
@@ -357,7 +358,7 @@ void loop_control_task()
     hall_rising_sum = hall_falling_edge_success[0]+hall_falling_edge_success[1]+hall_falling_edge_success[2];
     hall_falling_sum = hall_falling_edge_success[0]+hall_falling_edge_success[1]+hall_falling_edge_success[2];
 
-    if(hall_rising_sum<HALL_NUM && hall_falling_sum<HALL_NUM){
+    if(hall_rising_sum<HALL_NUM || hall_falling_sum<HALL_NUM){
         hall_sensor_testing();
     }
 
@@ -365,7 +366,7 @@ void loop_control_task()
     sin_cos_rising_sum = sin_cos_falling_edge_success[0]+sin_cos_falling_edge_success[1];
     sin_cos_falling_sum = sin_cos_falling_edge_success[0]+sin_cos_falling_edge_success[1];
 
-    if(sin_cos_rising_sum<SIN_COS_NUM && sin_cos_falling_sum<SIN_COS_NUM){
+    if(sin_cos_rising_sum<SIN_COS_NUM || sin_cos_falling_sum<SIN_COS_NUM){
         sin_cos_sensor_testing();
     }
 
