@@ -40,16 +40,6 @@
 #define RECORD_SIZE 128 // Number of point to record
 #define BOARD_MODE "DUT" // Number of point to record
 
-#define HALL_NUM 3
-#define HALL1 7
-#define HALL2 9
-#define HALL3 49
-
-#define SIN_COS_NUM 2
-#define SIN 43
-#define COS 45
-
-#define CAN_STB 20
 
 
 
@@ -99,28 +89,6 @@ float32_t received_value;
 bool      received_start_stop;
 
 float32_t starting_duty_cycle = 0.1;
-
-uint8_t hall_before[HALL_NUM]={0};
-uint8_t hall_now[HALL_NUM]={0};
-uint8_t hall_rising_edge_count[HALL_NUM]={0};
-uint8_t hall_falling_edge_count[HALL_NUM]={0};
-
-uint8_t hall_rising_sum=0;
-uint8_t hall_falling_sum=0;
-uint8_t sin_cos_rising_sum=0;
-uint8_t sin_cos_falling_sum=0;
-
-
-uint8_t sin_cos_before[SIN_COS_NUM]={0};
-uint8_t sin_cos_now[SIN_COS_NUM]={0};
-uint8_t sin_cos_rising_edge_count[SIN_COS_NUM]={0};
-uint8_t sin_cos_falling_edge_count[SIN_COS_NUM]={0};
-
-uint8_t hall_rising_edge_success[HALL_NUM]  ={0};
-uint8_t hall_falling_edge_success[HALL_NUM] ={0};
-uint8_t sin_cos_rising_edge_success[SIN_COS_NUM]     ={0};
-uint8_t sin_cos_falling_edge_success[SIN_COS_NUM]    ={0};
-
 
 static float32_t kp = 0.000215;
 static float32_t Ti = 7.5175e-5;
@@ -205,17 +173,6 @@ pid1.init(pid_params);
 
     communication.rs485.turnOnCommunication();
 
-    /* Sets up the HALL sensors for testing */
-	spin.gpio.configurePin(HALL1, INPUT);
-	spin.gpio.configurePin(HALL2, INPUT);
-	spin.gpio.configurePin(HALL3, INPUT);
-
-    /* Sets up the SIN/COS sensors for testing */
-    spin.gpio.configurePin(SIN, INPUT);
-	spin.gpio.configurePin(COS, INPUT);
-
-    spin.gpio.configurePin(CAN_STB, OUTPUT);
-
 
 }
 
@@ -230,7 +187,6 @@ void loop_communication_task()
 void loop_application_task()
 {
 
-    spin.gpio.resetPin(CAN_STB);
     communication.can.setCtrlEnable(true);
     communication.can.setBroadcastEnable(false);
     can_test_ctrl_enable = communication.can.getStartStopState();
@@ -306,82 +262,10 @@ void loop_application_task()
 }
 
 
-void hall_sensor_testing(){
-    /* Reads a signal of the HALL sensors for testing */
-    hall_now[0] = spin.gpio.readPin(HALL1);
-    hall_now[1] = spin.gpio.readPin(HALL2);
-    hall_now[2] = spin.gpio.readPin(HALL3);
 
-    for(uint8_t hall_count = 0; hall_count<HALL_NUM;hall_count++){
-        /* Counts the number of transitions in the rising and falling edges of the HALL sensors */
-        if(hall_now[hall_count] > hall_before[hall_count]){
-            hall_rising_edge_count[hall_count]++;
-            /* If there are enough transitions, it considers to be good */
-            if(hall_rising_edge_count[hall_count]>10){
-                hall_rising_edge_success[hall_count] = 1;
-            }
-        }else if(hall_now[hall_count] < hall_before[hall_count]){
-            hall_falling_edge_count[hall_count]++;
-            /* If there are enough transitions, it considers to be good */
-            if(hall_falling_edge_count[hall_count]>10){
-                hall_falling_edge_success[hall_count] = 1;
-            }
-        }
-    }        
-
-    hall_before[0] = hall_now[0];
-    hall_before[1] = hall_now[1];
-    hall_before[2] = hall_now[2];
-
-}
-
-void sin_cos_sensor_testing(){
-    /* Reads a signal of the HALL sensors for testing */
-    sin_cos_now[0] = spin.gpio.readPin(SIN);
-    sin_cos_now[1] = spin.gpio.readPin(COS);
-
-    for(uint8_t sin_cos_count = 0; sin_cos_count<SIN_COS_NUM;sin_cos_count++){
-        /* Counts the number of transitions in the rising and falling edges of the SIN/COS sensors */
-        if(sin_cos_now[sin_cos_count] > sin_cos_before[sin_cos_count] ){
-            sin_cos_rising_edge_count[sin_cos_count]++;
-            /* If there are enough transitions, it considers to be good */
-            if(sin_cos_rising_edge_count[sin_cos_count]>10){
-                sin_cos_rising_edge_success[sin_cos_count] = 1;
-            }
-        }else if(sin_cos_now[sin_cos_count] < sin_cos_before[sin_cos_count]){
-            sin_cos_falling_edge_count[sin_cos_count]++;
-            /* If there are enough transitions, it considers to be good */
-            if(sin_cos_falling_edge_count[sin_cos_count]>10){
-                sin_cos_falling_edge_success[sin_cos_count] = 1;
-            }
-        }
-    }        
-
-    sin_cos_before[0] = sin_cos_now[0];
-    sin_cos_before[1] = sin_cos_now[1];
-
-
-}
 
 void loop_control_task()
 {
-    /* Adds up the hall successes. If they are 3, it is no longer necessary to test it */
-    hall_rising_sum = hall_falling_edge_success[0]+hall_falling_edge_success[1]+hall_falling_edge_success[2];
-    hall_falling_sum = hall_falling_edge_success[0]+hall_falling_edge_success[1]+hall_falling_edge_success[2];
-
-    if(hall_rising_sum<HALL_NUM || hall_falling_sum<HALL_NUM){
-        hall_sensor_testing();
-    }
-
-    /* Adds up the hall successes. If they are 3, it is no longer necessary to test it */
-    sin_cos_rising_sum = sin_cos_falling_edge_success[0]+sin_cos_falling_edge_success[1];
-    sin_cos_falling_sum = sin_cos_falling_edge_success[0]+sin_cos_falling_edge_success[1];
-
-    if(sin_cos_rising_sum<SIN_COS_NUM || sin_cos_falling_sum<SIN_COS_NUM){
-        sin_cos_sensor_testing();
-    }
-
-
     // ------------- GET SENSOR MEASUREMENTS ---------------------
     meas_data = shield.sensors.getLatestValue(V1_LOW);
     if (meas_data != NO_VALUE)
