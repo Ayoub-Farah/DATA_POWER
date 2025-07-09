@@ -165,14 +165,8 @@ static float32_t inverse_Vhigh;
  static float32_t Kp = 0.35;
  static float32_t Ti = 0.005;
  static float32_t Td = 0.0F;
- static float32_t N = 1.0;
- 
+ static float32_t N = 1.0; 
 
-
-// static float32_t Kp = 30 * 0.035;
-// static float32_t Ti = 0.002029;
-// static float32_t Td = 0.0F;
-// static float32_t N = 1.0;
 /* Coefficient 0.4 comes from Va_max =  (α_max - 0.5) * Udc     */
 static float32_t lower_bound = -MIN_DC_VOLTAGE * 0.4;
 static float32_t upper_bound = MIN_DC_VOLTAGE * 0.4;
@@ -219,9 +213,11 @@ uint8_t asked_mode = IDLEMODE;
 
 const uint16_t SCOPE_SIZE = 512;
 uint16_t k_app_idx;
-ScopeMimicry scope(SCOPE_SIZE, 9);
+ScopeMimicry scope(SCOPE_SIZE, 7);
 static bool is_downloading;
 static bool memory_print;
+
+/* ---------------  Example specific functions --------------------------- */
 
 bool mytrigger()
 {
@@ -239,7 +235,8 @@ void dump_scope_datas(ScopeMimicry &scope) {
 }
 
 /**
- * VHigh Filter and PID init function
+ * @brief An initialization function for VHigh measurement, the pll, the pid
+ *        and the error counter.
  */
 void init_filt_and_reg(void)
 {
@@ -282,7 +279,7 @@ float32_t pulsation_estimator(int16_t sector, float32_t time)
 }
 
 /**
- *  Function that retrieves necessary measurements from power shield sensors.
+ *  @brief Function that retrieves all measurements from power shield sensors.
  */
 inline void retrieve_analog_datas()
 {
@@ -329,25 +326,24 @@ inline void retrieve_analog_datas()
 }
 
 /**
- * Reads Hall sensors and estimate position and speed.
+ * @brief Reads the encoder pins and estimate position and speed.
  */
 inline void get_position_and_speed()
 {
-	/* We get individual HALL sensor readings */
-	// HALL1_value = spin.gpio.readPin(HALL1);
-	// HALL2_value = spin.gpio.readPin(HALL2);
-	// HALL3_value = spin.gpio.readPin(HALL3);
-	/* We compute angle index using HALL values. */
-	// angle_index = HALL3_value * 4 + HALL2_value * 2 + HALL1_value * 1;
-
+	/* We encoder vales are read from timer 3 */
     encoder_value_raw = spin.timer.getIncrementalEncoderValue(TIMER3);
     encoder_value_raw_float = (float)encoder_value_raw;
     encoder_value = encoder_value_raw - encoder_offset;
     encoder_value_minus_offset_float = (float)encoder_value;
+
+    /* Encoder value is then normalized to find the angle */
     encoder_normalized = n_poles*(float)(encoder_value)/encoder_value_max;
     angle_filtered = ot_modulo_2pi(2*PI*encoder_normalized);
 
-	// hall_angle = ot_modulo_2pi(PI / 3.0 * sector[angle_index] + PI * k_angle_offset / 24.0);
+
+    /* This is a test code to auto-generate the angle without the encoder */
+	// hall_angle = ot_modulo_2pi(PI / 3.0 * sector[angle_index] + 
+    //              PI * k_angle_offset / 24.0);
 
 	// w_estimate = pulsation_estimator(sector[angle_index], counter_time * Ts);
     // w_estimate = 
@@ -355,11 +351,13 @@ inline void get_position_and_speed()
 
 	// angle_filtered = pllDatas.angle;
 	// w_meas = w_mes_filter.calculateWithReturn(pllDatas.w);
+
+    /* Angle value is saved for next cycle */
     previous_encoder_value = encoder_value;
 }
 
 /**
- * Handles current limits and switch to Error state if limits exceeded.
+ * @brief Handles current limits and switch to Error state if limits exceeded.
  */
 inline void overcurrent_mngt()
 {
@@ -374,7 +372,7 @@ inline void overcurrent_mngt()
 }
 
 /**
- * Stops PWM and reset filter and PID states
+ * @brief Stops PWM and reset filter and PID states
  */
 inline void stop_pwm_and_reset_states_ifnot()
 {
@@ -387,11 +385,11 @@ inline void stop_pwm_and_reset_states_ifnot()
 }
 
 /**
- * Performs Torque control using Field Oriented Control algorithm
+ * @brief Performs Torque control using Field Oriented Control algorithm
  */
 inline void control_torque()
 {
-
+    /* Gathers the angle and references */
 	angle_4_control = angle_filtered;
 	Idq_ref.q = manual_Iq_ref;
 	Idq_ref.d = manual_Iq_ref;
@@ -404,6 +402,7 @@ inline void control_torque()
 		Idq_ref.q = -Iq_max;
 	}
 
+    /* Gets the current measurements */
 	Iabc.a = I1_low_value;
 	Iabc.b = I2_low_value;
 	Iabc.c = -(Iabc.a + Iabc.b);
@@ -413,16 +412,16 @@ inline void control_torque()
 	Vdq.q = pi_q.calculateWithReturn(Idq_ref.q, Idq.q);
 	Vdq.o = 0.0F;
 
+    /* Manual override to test in open loop */
 	// Vdq.d = v_ref;
 	// Vdq.q = v_ref;
 	// Vdq.o = 0.0F;
-
 
 	Vabc = Transform::to_threephase(Vdq, angle_4_control);
 }
 
 /**
- * Helper function that computes duty cycles from ABC frame.
+ * @brief Helper function that computes duty cycles from ABC frame.
  */
 inline void compute_duties()
 {
@@ -436,6 +435,7 @@ inline void compute_duties()
     if(Vmax<Vabc.b) Vmax = Vabc.b;
     if(Vmax<Vabc.c) Vmax = Vabc.c;
 
+    /* This applies the third harmonic injection */
     compensation = 0.5 * (1 - ((Vmin+Vmax)*inverse_Vhigh) );
     
 	duty_abc.a = (Vabc.a * inverse_Vhigh + compensation);
@@ -444,7 +444,7 @@ inline void compute_duties()
 }
 
 /**
- * Helper function that set the duty cycles to the power shield.
+ * @brief Helper function that sends the duty cycles to the shield.
  */
 inline void apply_duties()
 {
@@ -454,7 +454,7 @@ inline void apply_duties()
 }
 
 /**
- * Helper function to start the power shield PWMs
+ * @brief Helper function to start the power shield PWMs
  */
 void start_pwms_ifnot()
 {
@@ -465,7 +465,7 @@ void start_pwms_ifnot()
 }
 
 /**
- * Setter function for required variables
+ * @brief Initialization function for the example variables
  */
 void init_variables()
 {
@@ -490,6 +490,10 @@ void init_variables()
 	Iq_max = 2.0;
 	manual_Iq_ref = 0.0F;
 }
+/* ------------END of Example specific functions --------------------------- */
+
+
+
 /* --------------SETUP FUNCTIONS------------------------------- */
 
 /**
@@ -518,31 +522,19 @@ void setup_routine()
     shield.sensors.setConversionParametersLinear(I3_LOW,0.00988678047895755,-19.544379045764682 );
     shield.sensors.setConversionParametersLinear(I_HIGH,-0.009624807234262563,19.232911369709534);
 
-
-	// spin.gpio.configurePin(HALL1, INPUT);
-	// spin.gpio.configurePin(HALL2, INPUT);
-	// spin.gpio.configurePin(HALL3, INPUT);
-
+    /* Initializes the incremental encoder logging */
     spin.timer.startLogIncrementalEncoder(TIMER3);
 
-	/* Scope configuration */
-	// scope.connectChannel(V12_value, "V12_value");           /* 0 */
+	/* Scope configuration - Please verify with line 216 */
 	scope.connectChannel(Vq, "Vq");                         /* 1 */
 	scope.connectChannel(Vd, "Vd");                         /* 2 */
-	scope.connectChannel(duty_abc.a, "duty_a");     /* 3 */
-	scope.connectChannel(duty_abc.b, "duty_b");     /* 4 */
-	scope.connectChannel(duty_abc.c, "duty_c");     /* 3 */
+	scope.connectChannel(duty_abc.a, "duty_a");             /* 3 */
+	scope.connectChannel(duty_abc.b, "duty_b");             /* 4 */
+	scope.connectChannel(duty_abc.c, "duty_c");             /* 3 */
 	scope.connectChannel(I2_low_value, "I2_low_value");     /* 4 */
 	scope.connectChannel(I_high, "I_high_value");     	    /* 5 */
 	scope.connectChannel(Iq_meas, "Iq_meas");               /* 6 */
 	scope.connectChannel(angle_filtered, "angle_filtered"); /* 7 */
-	// scope.connectChannel(encoder_value_raw_float, "enc_raw"); /* 7 */
-	// scope.connectChannel(encoder_value_minus_offset_float, "enc_offset"); /* 7 */
-	// scope.connectChannel(encoder_normalized, "enc_norm"); /* 7 */
-	// scope.connectChannel(Ib_ref, "Ib_ref");                 /* 8 */
-	// scope.connectChannel(hall_angle, "hall_angle");         /* 9 */
-	// scope.connectChannel(Ia_ref, "Ia_ref");                 /* 10 */
-	// scope.connectChannel(control_state_f, "control_state"); /* 11 */
 	scope.set_trigger(&mytrigger);
 	scope.set_delay(0.0);
 	scope.start();
@@ -569,14 +561,27 @@ void setup_routine()
 
 /**
  * This background task retrieve user inputs to control the OwnVerter:
- * - P and I keys respectively Power ON and Power OFF the inverter
- * - U and D keys respectively Increase and Decrease Iq reference.
- * - R Q and M keys are used to control ScopeMimicry data retrieval.
+ * - p and I keys respectively Power ON and Power OFF the inverter
+ * - u and D keys respectively Increase and Decrease Iq reference.
+ * - r Q and M keys are used to control ScopeMimicry data retrieval.
  */
 void loop_background_task()
 {
 	received_serial_char = console_getchar();
 	switch (received_serial_char) {
+    case 'h':
+        /* ----------SERIAL INTERFACE MENU----------------------- */
+        printk(" ___________________________________________ \n"
+               "|     ------- MENU ---------                |\n"
+               "|     press p : ask for power               |\n"
+               "|     press i : ask for idle                |\n"
+               "|     press r : retrieve scope data         |\n"
+               "|     press u : UP Iq Ref (default +0.1A)   |\n"
+               "|     press d : DOWN Iq Ref (default -0.1A) |\n"
+               "|     press m : print scope data on ownplot |\n"
+               "|     press q : reset scope acquisition     |\n"
+               "|___________________________________________|\n\n");
+        /* ------------------------------------------------------ */        
 	case 'p':
 		printk("power asked");
 		asked_mode = POWERMODE;
@@ -599,7 +604,7 @@ void loop_background_task()
 		memory_print = !memory_print;
 		break;
 	case 'q':
-		/* Relaunch scope acquisition */
+		/* Restart scope acquisition */
 		scope.start();
 		break;
 	}
@@ -693,7 +698,7 @@ void loop_critical_task()
 
 	get_position_and_speed();
 
-	// overcurrent_mngt();
+	// overcurrent_mngt();  // issues with calculation during testing
 
 	switch (control_state) {
 	case OFFSET_ST:
