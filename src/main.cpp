@@ -139,11 +139,11 @@ static uint32_t encoder_value_raw=0;
 static float32_t encoder_value_raw_float=0;
 static float32_t encoder_value_minus_offset_float=0;
 static int32_t encoder_value=0;
-static uint32_t encoder_offset=213;
-static float32_t encoder_value_max=2000.0;
+static uint32_t encoder_offset=0;
+static float32_t encoder_value_max=4000.0;
 static float32_t encoder_normalized=0.0;
 static uint32_t previous_encoder_value=0;
-static float32_t n_poles=4;
+static float32_t n_poles=8;
 /**
  * Low Pass Filters Init
  */
@@ -213,7 +213,7 @@ uint8_t asked_mode = IDLEMODE;
 
 const uint16_t SCOPE_SIZE = 512;
 uint16_t k_app_idx;
-ScopeMimicry scope(SCOPE_SIZE, 7);
+ScopeMimicry scope(SCOPE_SIZE, 9);
 static bool is_downloading;
 static bool memory_print;
 
@@ -333,12 +333,15 @@ inline void get_position_and_speed()
 	/* We encoder vales are read from timer 3 */
     encoder_value_raw = spin.timer.getIncrementalEncoderValue(TIMER3);
     encoder_value_raw_float = (float)encoder_value_raw;
-    encoder_value = encoder_value_raw - encoder_offset;
+	encoder_value = encoder_value_raw ; 
     encoder_value_minus_offset_float = (float)encoder_value;
 
     /* Encoder value is then normalized to find the angle */
-    encoder_normalized = n_poles*(float)(encoder_value)/encoder_value_max;
-    angle_filtered = ot_modulo_2pi(2*PI*encoder_normalized);
+    encoder_normalized = n_poles*(encoder_value_raw_float/encoder_value_max);
+	float32_t angle_calculated = ot_modulo_2pi(2*PI*encoder_normalized); 
+	if (angle_calculated < 2*PI){
+    	angle_filtered = angle_calculated;
+	}
 
 
     /* This is a test code to auto-generate the angle without the encoder */
@@ -425,22 +428,27 @@ inline void control_torque()
  */
 inline void compute_duties()
 {
-	inverse_Vhigh = 1.0 / V_high_filtered;
+	// inverse_Vhigh = 1.0 / V_high_filtered;
     
-    Vmin = Vabc.a;
-    Vmax = Vabc.a;
+    // Vmin = Vabc.a;
+    // Vmax = Vabc.a;
 
-    if(Vmin>Vabc.b) Vmin = Vabc.b;
-    if(Vmin>Vabc.c) Vmin = Vabc.c;
-    if(Vmax<Vabc.b) Vmax = Vabc.b;
-    if(Vmax<Vabc.c) Vmax = Vabc.c;
+    // if(Vmin>Vabc.b) Vmin = Vabc.b;
+    // if(Vmin>Vabc.c) Vmin = Vabc.c;
+    // if(Vmax<Vabc.b) Vmax = Vabc.b;
+    // if(Vmax<Vabc.c) Vmax = Vabc.c;
 
-    /* This applies the third harmonic injection */
-    compensation = 0.5 * (1 - ((Vmin+Vmax)*inverse_Vhigh) );
+    // /* This applies the third harmonic injection */
+    // compensation = 0.5 * (1 - ((Vmin+Vmax)*inverse_Vhigh) );
+    // compensation = 0.5 * (1 - ((Vmin+Vmax)*inverse_Vhigh) );
     
-	duty_abc.a = (Vabc.a * inverse_Vhigh + compensation);
-	duty_abc.b = (Vabc.b * inverse_Vhigh + compensation);
-	duty_abc.c = (Vabc.c * inverse_Vhigh + compensation);
+	// duty_abc.a = (Vabc.a * inverse_Vhigh + compensation);
+	// duty_abc.b = (Vabc.b * inverse_Vhigh + compensation);
+	// duty_abc.c = (Vabc.c * inverse_Vhigh + compensation);
+	inverse_Vhigh = 1.0 / MIN_DC_VOLTAGE;
+	duty_abc.a = (Vabc.a * inverse_Vhigh + 0.5);
+	duty_abc.b = (Vabc.b * inverse_Vhigh + 0.5);
+	duty_abc.c = (Vabc.c * inverse_Vhigh + 0.5);
 }
 
 /**
@@ -530,11 +538,12 @@ void setup_routine()
 	scope.connectChannel(Vd, "Vd");                         /* 2 */
 	scope.connectChannel(duty_abc.a, "duty_a");             /* 3 */
 	scope.connectChannel(duty_abc.b, "duty_b");             /* 4 */
-	scope.connectChannel(duty_abc.c, "duty_c");             /* 3 */
-	scope.connectChannel(I2_low_value, "I2_low_value");     /* 4 */
-	scope.connectChannel(I_high, "I_high_value");     	    /* 5 */
-	scope.connectChannel(Iq_meas, "Iq_meas");               /* 6 */
-	scope.connectChannel(angle_filtered, "angle_filtered"); /* 7 */
+	scope.connectChannel(duty_abc.c, "duty_c");             /* 5 */
+	scope.connectChannel(I2_low_value, "I2_low_value");     /* 6 */
+	scope.connectChannel(I_high, "I_high_value");     	    /* 7 */
+	// scope.connectChannel(Iq_meas, "Iq_meas");               /* 8 */
+	scope.connectChannel(encoder_value_raw_float, "encoder_raw"); /* 9 */
+	scope.connectChannel(angle_filtered, "encoder_calculated"); /* 9 */
 	scope.set_trigger(&mytrigger);
 	scope.set_delay(0.0);
 	scope.start();
