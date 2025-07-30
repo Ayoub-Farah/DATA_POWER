@@ -33,7 +33,7 @@
 #include "SpinAPI.h"
 #include "ShieldAPI.h"
 #include "TaskAPI.h"
-#include "user_data_obects.h"
+#include "user_data_objects.h"
 
 /*--------------OWNTECH Libraries----------------------------- */
 #include "pid.h"
@@ -74,10 +74,10 @@ uint8_t received_serial_char;
 /* Temporary storage fore measured value (ctrl task) */
 // static float meas_data;
 
-float32_t duty_cycle = 0.3;
+// float32_t duty_cycle = 0.3;
 
 /* Voltage reference */
-static float32_t voltage_reference = 15;
+// static float32_t voltage_reference = 15;
 
 /* PID coefficients for a 8.6ms step response*/
 static float32_t kp = 0.000215;
@@ -111,6 +111,10 @@ void idling_power()
     mode = IDLEMODE;
 }
 
+void set_voltage(void)
+{
+    voltage_reference = voltage_setpoint;
+}
 /*--------------SETUP FUNCTIONS------------------------------- */
 
 /**

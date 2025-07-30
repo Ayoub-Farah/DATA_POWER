@@ -9,13 +9,12 @@
 /*
  * Groups / first layer data object IDs
  */
-#define ID_ROOT        0x00
 
 /* Config */
 #define ID_CONF             0x4
 #define ID_CONF_POW         0x41
 #define ID_CONF_IDL         0x42
-
+#define ID_CONF_SETV        0x43
 
 /* Measurements */
 #define ID_MEAS        0x5
@@ -59,8 +58,14 @@ static float32_t V_high_value;
 static float32_t temp_1_value;
 static float32_t temp_2_value;
 
+static float32_t duty_cycle = 0.3;
+static float32_t voltage_reference = 15;
+static float32_t voltage_setpoint = 15;
+
+
 void powering_power(void);
 void idling_power(void);
+void set_voltage(void);
 
 extern uint8_t mode;
 
@@ -81,9 +86,15 @@ THINGSET_ADD_FN_VOID(ID_CONF, ID_CONF_POW, "xPower", &powering_power,
 THINGSET_ADD_FN_VOID(ID_CONF, ID_CONF_IDL, "xIdle", &idling_power,
                      THINGSET_ANY_RW);
 
+THINGSET_ADD_FN_VOID(ID_CONF, ID_CONF_SETV, "xSetV", &set_voltage,
+                     THINGSET_ANY_RW);
+
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_SETV, 0x44, "wVref_V", &voltage_setpoint, 2,
+                     THINGSET_ANY_RW, SUBSET_SER);
+
 /* Measurements object definitions */
 
-THINGSET_ADD_GROUP(ID_ROOT, ID_MEAS, "Measurements", THINGSET_NO_CALLBACK);
+THINGSET_ADD_GROUP(TS_ID_ROOT, ID_MEAS, "Measurements", THINGSET_NO_CALLBACK);
 
 THINGSET_ADD_ITEM_FLOAT(ID_MEAS, ID_MEAS_V1_LOW, "rV1Low_V", &V1_low_value, 2,
                         THINGSET_ANY_R, TS_SUBSET_LIVE);
@@ -111,7 +122,7 @@ THINGSET_ADD_ITEM_FLOAT(ID_MEAS, ID_MEAS_TEMP2, "rTemp2_degC", &temp_2_value, 2,
 
 /* TEST object definitions */
 
-// THINGSET_ADD_GROUP(TS_ID_ROOT, ID_TEST, "Config", THINGSET_NO_CALLBACK);
+// THINGSET_ADD_GROUP(TS_TS_ID_ROOT, ID_TEST, "Config", THINGSET_NO_CALLBACK);
 
 // THINGSET_ADD_FN_VOID(ID_TEST, ID_TEST_RS485, "xRS485", &test_RS485,
 //                      THINGSET_ANY_RW);
