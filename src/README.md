@@ -1,89 +1,108 @@
-# Ac Voltage Source
+# Buck with PID controlled output voltage
 
-In this example we build an AC voltage source using a Twist and supply a resistor.
+A voltage mode buck converter regulates voltage by comparing the output voltage to a reference voltage. It adjusts the duty cycle of its switching signal to keep the output voltage stable. This type of converter efficiently steps down voltage levels, making it useful in various electronic devices like phone battery charger.
 
-<div style="text-align:center"><img src="Image/grid_forming.png" alt="Schematic p2p" width="600"></div>
+This example will implement a voltage mode buck converter to control the output.
 
-The parameters are:
+!!! attention Are you ready to start ?
+    Before you can run this example, you must have successfully gone through our [getting started](https://docs.owntech.org/core/docs/environment_setup/).  
 
-* $U_{DC} = 40 V$
-* $R_{LOAD} = 30 \Omega$.
+## Hardware setup and requirement
 
-## Software overview
 
-### Import libraries
-This example depends on two libraries:
+![schema](Image/buck_m.png)
 
-1. control_library
-2. ScopeMimicry
+!!! warning Hardware pre-requisites 
+    You will need :
+    - 1 TWIST
+    - A dc power supply (20-60V)
+    - A resistor (or a dc electronic load)
 
-To use them, you have to add the following lines in platformio.ini file:
-```
+## Software setup
+
+Locate your `platformio.ini file` in your working folder.
+
+![platformio.ini location](Image/platformio_ini_location.png)
+
+
+We will import `control_library` in `platformio.ini` by decommenting the line :
+
+```ini
 lib_deps=
-    control_library = https://github.com/owntech-foundation/control_library.git
-    scope = https://github.com/owntech-foundation/scopemimicry.git
+    #control_lib = https://github.com/owntech-foundation/control_library.git
+```
+It should look like this: 
+
+```ini
+lib_deps=
+    control_lib = https://github.com/owntech-foundation/control_library.git
 ```
 
-### Define a regulator
-
-The voltage regulation will be done by a SOGI and clarke-park transform to work on the d-q plane.
-
-Everything is done by the class in the `singlePhaseInverter.h` file.
+We can use this library to initialize a PID control with the function :
 
 ```cpp
-static singlePhaseInverter inverter;
+pid.init(pid_params);
 ```
 
-The parameters of the class are passed in the `setup_routine`:
+the initial parameters are defined using the following lines :
 
 ```cpp
-inverter.init(10.0, w0, Ts);
+#include "pid.h"
+static Pid pid; // define a pid controller.
+
+static float32_t Ts = control_task_period * 1.e-6F;
+static float32_t kp = 0.000215;
+static float32_t Ti = 7.5175e-5;
+static float32_t Td = 0.0;
+static float32_t N = 0.0;
+static float32_t upper_bound = 1.0F;
+static float32_t lower_bound = 0.0F;
+static PidParams pid_params(Ts, kp, Ti, Td, N, lower_bound, upper_bound);
 ```
 
-!!! warning How the code works
+## Expected result
 
-    This code implements a grid following inverter.
-    The inverter will follow a "virtual grid" voltage called `Vnet`.
-    You can change `Iq` by pressing `u` for UP and `d` for down.
-    The idea is that **the inverter will create a current on the resistance that is phase shifted in relation to `Vnet`.**
-    Of course, the current in the resistance is in phase with the output voltage of the inverter.
+This code will control the output voltage to have 15V, you can control the output voltage with platformio serial monitor. The image below shows your a snippet of the window and the button to press.
+
+![serial monitor button](Image/serial_monitor_button.png)
+
+When opening it for the first time, the serial monitor will give you an initialization message regarding the parameteres of the ADCs as shown below.  
+
+![serial monitor initialization](Image/serial_monitor_initialization.png)
+
+!!! tip Commands keys
+    - press `u` to increase the voltage
+    - press `d` to decrease the voltage
+    - press `h` to show the help menu
+
+Here's sequence when the help menu is activated with `h`, the power mode is then activated with `p` and finally the Twist converter is put in idle with the `i`. 
+
+![serial monitor working](Image/serial_monitor_operation.gif)
+
+!!! note The data that you see
+    When you send `p` the Twist board will send you back a stream of data on the following format: 
+    
+    ```c 
+    I1:V1:VREF:I2:V2:VREF:IH:VH:T1:T2
+    ```
+    Where: 
+    - `I1` is the current in `LEG1` of the `LOW` side
+    - `V1` is the voltage in `LEG1` of the `LOW` side
+    - `VREF` is the reference voltage set for `LEG1` and `LEG2`vof the `LOW` side
+    - `I2` is the current in `LEG1` of the `LOW` side
+    - `V2` is the voltage in `LEG2` of the `LOW` side
+    - `VREF` is the reference voltage set for `LEG1` and `LEG2`vof the `LOW` side
+    - `IH` is the current in `LEG2` of the `LOW` side
+    - `VH` is the voltage on the `HIGH` side
+    - `T1` is the temperature from the NTC thermistor in `LEG1` of the `LOW` side
+    - `T2` is the temperature from the NTC thermistor in `LEG2` of the `LOW` side
+
+    For instance when you reveive this: 
+
+    ```c 
+    1.44:14.80:0.13:16.14:1.14:22.82:
+    ```
+
+    It means that `I1 = 1.46 A`, `V1 = 14.80 V` and so on. 
 
 
-### To view some variables.
-
-!!!tip Acquisiton
-
-    It is posible to trigger a scope acquisition by :
-
-    1. pressing the `t` button on your keyboard. It takes a few miliseconds.
-    2. Once the acquisition is done go in `idle` mode
-    3. In `idle mode` and press the `r` button to retrieve the data.
-    4. You will automatically see a `Data_records` folder appear with a `.csv`, `.txt` and `.png` file
-
-If you go to the `alien icon`, under the `USB/OwnTech` folder qnd press the `Plot recording` action you will trigger a plot action.
-
-The action will prompt you to choose which record to plot on the terminal. On the example below I choose the pot record 3.
-
-```terminal
-record n°01, name 2024-07-10_17-09-22-record.txt
-record n°02, name 2024-07-10_17-17-41-record.txt
-record n°03, name 2024-07-10_17-19-52-record.txt
-Enter record number to plot
-3
-The record number is: 03
-
-```
-
-
-## Link between voltage reference and duty cycles.
-The voltage source is defined by the voltage difference: $U_{12} = V_{1low} - V_{2low}$.
-
-Link with the duty cycle:
-
-* The leg1 is fixed in buck mode then: $V_{1low} = \alpha_1 . U_{DC}$
-* The leg2 is fixed in boost mode then: $V_{2low} = (1-\alpha_2) . U_{DC}$
-
-We change at the same time $\alpha_1$ and $\alpha_2$, then we have : $\alpha_1 = \alpha_2 = \alpha$. <br>
-And then: $U_{12} = (2.\alpha - 1).U_{DC}$
-
-$\alpha = \dfrac{U_{12}}{2.U_{DC}}  + 0.5$

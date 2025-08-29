@@ -1,5 +1,4 @@
 /*
- *
  * Copyright (c) 2021-2024 LAAS-CNRS
  *
  *   This program is free software: you can redistribute it and/or modify
@@ -26,28 +25,31 @@
  *
  * @author Clément Foucher <clement.foucher@laas.fr>
  * @author Luiz Villa <luiz.villa@laas.fr>
+ * @author Ayoub Farah Hassan <ayoub.farah-hassan@laas.fr>
  */
 
-//--------------OWNTECH APIs----------------------------------
-#include "TaskAPI.h"
-#include "ShieldAPI.h"
-#include "SpinAPI.h"
+//--------------Zephyr----------------------------------------
+#include <zephyr/console/console.h>
 
+//--------------OWNTECH APIs----------------------------------
+#include "SpinAPI.h"
+#include "ShieldAPI.h"
+#include "TaskAPI.h"
+
+//--------------OWNTECH Libraries-----------------------------
+#include "pid.h"
 // from control library
 #include "trigo.h"
 #include "filters.h"
 // #include "power_ac1phase.h"
 #include "ScopeMimicry.h"
 #include "control_factory.h"
-#include "zephyr/console/console.h"
-#include "singlePhaseInverter.h"
-#include "sogi.h"
 
-#define DUTY_MIN 0.1F
-#define DUTY_MAX 0.9F
-#define UDC_STARTUP 0.0F
+#define SCOPE_LENGTH 4096
+#define NUM_SCOPE_VAR 5
+
 //--------------SETUP FUNCTIONS DECLARATION-------------------
-void setup_routine();           /* Setups the hardware and software of the system */
+void setup_routine(); // Setups the hardware and software of the system
 
 //--------------LOOP FUNCTIONS DECLARATION--------------------
 void loop_communication_task(); // code to be executed in the slow communication task
@@ -55,131 +57,87 @@ void loop_application_task();   // Code to be executed in the background task
 void loop_critical_task();     // Code to be executed in real time in the critical task
 
 //--------------USER VARIABLES DECLARATIONS-------------------
-static const uint32_t control_task_period = 100; //[us] period of the control task
+
+static uint32_t control_task_period = 50; //[us] period of the control task
 static bool pwm_enable = false;            //[bool] state of the PWM (ctrl task)
 
 uint8_t received_serial_char;
 
 /* Measure variables */
-static float32_t V1_low_value; // [V]
-static float32_t V2_low_value; // [V]
-static float32_t I1_low_value; // [A]
-static float32_t I2_low_value; // [A]
-static float32_t V_high; // [V]
-static float32_t I_high; // [A]
-static float32_t V_high_filt; // [V]
 
-static float32_t Vgrid_meas; // [V]
-static float32_t Igrid_meas; // [V]
+static float32_t V1_low_value;
+static float32_t V2_low_value;
+static float32_t I1_low_value;
+static float32_t I2_low_value;
+static float32_t I_high;
+static float32_t V_high;
+
+static float32_t temp_1_value;
+static float32_t temp_2_value;
 
 
 static float meas_data; // temp storage meas value (ctrl task)
 
-// static PowerAC1PhaseOutput pq_power;
-// static PowerAC1PhaseParams ac_meas_config;
-// static PowerAC1Phase inverter;
+float32_t duty_cycle = 0.3;
+static uint32_t critical_task_counter;
+static uint32_t acquisition_counter;
 
-static singlePhaseInverter inverter;
-
-static dqo_t power;
-
-static float32_t Vnet;
-static float32_t virtual_Vgrid_amplitude = 18.0F;
-static float32_t Vq_net;
-
-static dqo_t Vdq;
-static dqo_t Vdq_ref;
-static dqo_t Vdq_ref_max;
-static dqo_t Vdq_ref_min;
-
-static dqo_t Idq;
-static dqo_t Idq_ref;
-static dqo_t Idq_ref_max;
-static dqo_t Idq_ref_min;
-static dqo_t Idq_ref_delta;
-
-
-static dqo_t Vdq_output;
-
-static float32_t Id_ref_delta = 0.0;
-static float32_t Iq_ref_delta = 0.0;
-
-
-static float32_t Vd_ref_max = 20.0;
-static float32_t Vd_ref_min = 0.0;
-
-
-static clarke_t Vab;
-static clarke_t Vab_output;
-static clarke_t Iab;
-
-static float32_t Vond;
-static float32_t R_load = 10;
-
-static float32_t Ialpha, Ibeta;
-static const float32_t sync_power_tolerance = 0.1;
-static bool is_net_synchronized;
-static float32_t omega;
-
-
-/* duty_cycle*/
-static float32_t duty_cycle;// [No unit]
+uint32_t decimation = 1;
 
 static float32_t Udc = 30.0F; // dc voltage supply assumed [V]
-static const float f0 = 50.0F; // fundamental frequency [Hz]
-static const float32_t w0 = 2.0F * PI * f0;   // pulsation [rad/s]
+static float f0 = 50.0F; // fundamental frequency [Hz]
+static float32_t w0 = 2.0F * PI * f0;   // pulsation [rad/s]
 /* Sinewave settings */
 static float32_t Vgrid_ref; //[V]
 static float32_t Vgrid_amplitude_ref = 0.0F; // [V]
 static float32_t Vgrid_amplitude = 0.0F; // [V]
 static float angle = 0.F; // [rad]
 static float theta = 0.F; // [rad]
+static float theta_before = 0.F; // [rad]
+const float32_t inverse_2pi = 1.5915493667125701904296875E-1;
 
-//------------- PR RESONANT -------------------------------------
-static float32_t Ts = control_task_period * 1.0e-6F;
+static float32_t voltage_reference = 15; //voltage reference
 
-// static float32_t kp = 0.000215;
-// static float32_t Ti = 0.2*7.5175e-5;
-static float32_t kp = 0.001;      // kp is very small due to the fact that we are on a pure delay system (ref Viking)
-static float32_t Ti = 0.001/3000; // Ti is Kp/Ki
-float32_t Td = 0.0;
-float32_t N = 1.0;
-float32_t upper_bound = Udc;
-float32_t lower_bound = -Udc;
+/* PID coefficient for a 8.6ms step response*/
 
-static Pid pi_current_d = controlLibFactory.pid(Ts, kp, Ti, Td, N, lower_bound, upper_bound);
-static Pid pi_current_q = controlLibFactory.pid(Ts, kp, Ti, Td, N, lower_bound, upper_bound);
-
-static Pid pi_voltage_d = controlLibFactory.pid(Ts, 0.01, 0.003, Td, N, lower_bound, upper_bound);
-static Pid pi_voltage_q = controlLibFactory.pid(Ts, 0.01, 0.003, Td, N, lower_bound, upper_bound);
-
-Sogi sogi_i;
-Sogi sogi_v;
+static float32_t kp = 0.000215;
+static float32_t Ti = 7.5175e-5;
+static float32_t Td = 0.0;
+static float32_t N = 0.0;
+static float32_t upper_bound = 1.0F;
+static float32_t lower_bound = 0.0F;
+static float32_t Ts = control_task_period * 1e-6;
+static PidParams pid_params(Ts, kp, Ti, Td, N, lower_bound, upper_bound);
+static Pid pid;
 
 
-// comes from "filters.h"
-LowPassFirstOrderFilter vHighFilter(Ts, 0.1F);
-static uint32_t critical_task_counter;
+const float f_start     = 50.0f;     // Hz
+const float f_end       = 5000.0f;   // Hz
+const float T_sweep     = SCOPE_LENGTH*Ts;      // seconds to go from f_start to f_end
+const bool  sweep_loop  = true;      // true: loop; false: hold at f_end
+
+// --- Derived ---
+const float k_lin  = (f_end - f_start) / T_sweep;   // Hz/s
+
 
 // the scope help us to record datas during the critical task
 // its a library which must be included in platformio.ini
-static ScopeMimicry scope(1024, 20);
+static ScopeMimicry scope(SCOPE_LENGTH, NUM_SCOPE_VAR);
 static bool is_downloading;
 static bool trigger = false;
+
+
 //---------------------------------------------------------------
 
 enum serial_interface_menu_mode // LIST OF POSSIBLE MODES FOR THE OWNTECH CONVERTER
 {
     IDLEMODE = 0,
-    POWERMODE=1,
-    ERRORMODE=3,
-    STARTUPMODE=4
+    POWERMODE
 };
 
-static uint8_t mode = IDLEMODE;
-static uint8_t mode_asked = IDLEMODE;
-static float32_t spying_mode = 0;
-static const float32_t MAX_CURRENT = 8.0F;
+uint8_t mode = IDLEMODE;
+
+
 
 bool a_trigger() {
     return trigger;
@@ -202,116 +160,35 @@ void dump_scope_datas(ScopeMimicry &scope)  {
     printk("end record\n");
 }
 
-// UTILS FUNCTIONS FOR CONTROL
-float32_t saturate(const float32_t x, float32_t min, float32_t max) {
-    if (x > max) {
-        return max;
-    }
-    if (x < min) {
-        return min;
-    }
-    return x;
-}
-
-float32_t sign(float32_t x, float32_t tol=1e-3) {
-    if (x > tol) {
-        return 1.0F;
-    }
-    if (x < -tol) {
-        return -1.0F;
-    }
-    return 0.0F;
-}
-
-float32_t rate_limiter(const float32_t ref, float32_t value, const float32_t rate) {
-    value += Ts * rate * sign(ref - value);
-    return value;
-}
 
 //--------------SETUP FUNCTIONS-------------------------------
 
 /**
  * This is the setup routine.
- * It is used to call functions that will initialize your hardware and tasks.
- * In this example, we setup the version of the spin board and a 
- * background task. The critical task is defined but not started.
- * NOTE: It is important to follow the steps and initialize the hardware first 
- * and the tasks second. 
+ * It is used to call functions that will initialize your spin, twist, data and/or tasks.
+ * In this example, we setup the version of the spin board and a background task.
+ * The critical task is defined but not started.
  */
 void setup_routine()
 {
-    // Setup the hardware first
-    shield.sensors.enableDefaultTwistSensors();
+    /* buck voltage mode */
+    shield.power.initBuck(ALL);
 
-    // DISABLE DC LOW CAPACITORS
-    shield.power.disconnectCapacitor(LEG1);
+    shield.sensors.enableDefaultTwistSensors();
+    shield.power.connectCapacitor(LEG1);
     shield.power.disconnectCapacitor(LEG2);
 
     scope.connectChannel(I1_low_value, "I1_low_value");
-    scope.connectChannel(I_high, "I_High");
     scope.connectChannel(V1_low_value, "V1_low_value");
-    scope.connectChannel(V2_low_value, "V2_low_value");
-    scope.connectChannel(V_high_filt, "V_high_filt");
     scope.connectChannel(duty_cycle, "duty_cycle");
-    scope.connectChannel(power.d, "power_p");
-    scope.connectChannel(power.q, "power_q");
-    scope.connectChannel(Vq_net, "Vq_net");
-    scope.connectChannel(Vnet, "Vnet");
-	scope.connectChannel(Vond, "Vond");
-	scope.connectChannel(Idq.d, "Id");
-	scope.connectChannel(Idq.q, "Iq");
-	scope.connectChannel(Iab.alpha, "Ialpha");
-	scope.connectChannel(Iab.beta, "Ibeta");
-	scope.connectChannel(Vdq.d, "Vd_ond");
-	scope.connectChannel(Vdq.q, "Vq_ond");
-	scope.connectChannel(Vab.alpha, "Valpha");
-	scope.connectChannel(Vab.beta, "Vbeta");
-	scope.connectChannel(omega, "omega");
+	scope.connectChannel(theta, "theta");
+	scope.connectChannel(f0, "f0");
     scope.set_delay(0.0F);
     scope.set_trigger(a_trigger);
     scope.start();
 
-    // PR initialisation.
 
-    // ac_meas_config.grid_voltage = 10.0;
-    // ac_meas_config.w0 = w0;
-    // ac_meas_config.Ts = Ts;
-
-    inverter.init(FORMING, Udc, Udc, w0, Ts);
-
-    sogi_v.init(500.0, Ts);
-    sogi_i.init(500.0, Ts);
-
-    Idq_ref.d = 0.0;
-    Idq_ref.q = 0.0;
-    Vdq_ref.d = 0.0;
-    Vdq_ref.q = 0.0;
-
-    Idq_ref_max.d = 8.0;
-    Idq_ref_max.q = 1.0;
-    Idq_ref_min.d = -0.1;
-    Idq_ref_min.q = -0.1;
-
-    Vdq_ref_max.d = 30.0;
-    Vdq_ref_max.q = 30.0;
-    Vdq_ref_min.d = -0.1;
-    Vdq_ref_min.q = -0.1;
-
-    Idq_ref_delta.d = 0.0;
-    Idq_ref_delta.q = 0.0;
-
-
-
-    // power_ac1phase_init(&ac_meas_config, 10.0, 2.0*PI*50.0, Ts);
-	pi_current_d.reset();
-	pi_current_q.reset();
-	pi_voltage_d.reset();
-	pi_voltage_q.reset();
-	is_net_synchronized = false;
-
-    /* buck voltage mode */
-    shield.power.initBuck(LEG1);
-    shield.power.initBoost(LEG2);
+    pid.init(pid_params);
 
     // Then declare tasks
     uint32_t app_task_number = task.createBackground(loop_application_task);
@@ -322,79 +199,53 @@ void setup_routine()
     task.startBackground(app_task_number);
     task.startBackground(com_task_number);
     task.startCritical(); // Uncomment if you use the critical task
-
-
 }
 
 //--------------LOOP FUNCTIONS--------------------------------
 
 void loop_communication_task()
 {
-    while (1)
+    received_serial_char = console_getchar();
+    switch (received_serial_char)
     {
-        received_serial_char = console_getchar();
-        switch (received_serial_char)
-        {
-        case 'h':
-            //----------SERIAL INTERFACE MENU-----------------------
-            printk(" ________________________________________\n");
-            printk("|     ------- grid forming ------        |\n");
-            printk("|     press i : idle mode                |\n");
-            printk("|     press p : power mode               |\n");
-            printk("|     press d : vdref up by 5V           |\n");
-            printk("|     press c : vdref down by 5V         |\n");
-            printk("|     press u : vdref up by 1V           |\n");
-            printk("|     press j : vdref down by 1V         |\n");
-            printk("|________________________________________|\n\n");
-            //------------------------------------------------------
-            break;
-        case 'i':
-            printk("idle mode\n");
-            mode_asked = IDLEMODE;
-            break;
-        case 'p':
-                if (!is_downloading){
-                    printk("power mode\n");
-                    scope.start();
-                    mode_asked = POWERMODE;
-                }
-            break;
-        case 'u':
-				if (Vdq_ref.d < Vdq_ref_max.d)
-				{
-					Vdq_ref.d += 1.0F;
-				}
-            break;
-        case 'j':
-				if (Vdq_ref.d > Vdq_ref_min.d)
-				{
-					Vdq_ref.d -= 1.0F;
-				}
-            break;
-        case 'd':
-				if (Vdq_ref.d < Vdq_ref_max.d)
-				{
-					Vdq_ref.d += 5.0F;
-				}
-            break;
-        case 'c':
-				if (Vdq_ref.d > Vdq_ref_min.d)
-				{
-					Vdq_ref.d -= 5.0F;
-				}
-            break;
-        case 'r':
-            is_downloading = true;
-            trigger = false;
-            break;
-        case 't':
-            trigger = true;
-		break;
-	default:
-            break;
-        }
-    }
+    case 'h':
+        //----------SERIAL INTERFACE MENU-----------------------
+        printk(" ________________________________________\n");
+        printk("|     ---- MENU buck voltage mode ----   |\n");
+        printk("|     press i : idle mode                |\n");
+        printk("|     press p : power mode               |\n");
+        printk("|     press u : voltage reference UP     |\n");
+        printk("|     press d : voltage reference DOWN   |\n");
+        printk("|________________________________________|\n\n");
+        //------------------------------------------------------
+        break;
+    case 'i':
+        printk("idle mode\n");
+        mode = IDLEMODE;
+        break;
+    case 'p':
+        printk("power mode\n");
+        mode = POWERMODE;
+        break;
+    case 'u':
+        f0 += 50;
+        w0 = 2.0F * PI * f0;   // Updates the w0 
 
+        break;
+    case 'd':
+        f0 -= 50;
+        w0 = 2.0F * PI * f0;   // Updates the w0
+        break;
+    case 'r':
+        is_downloading = true;
+        trigger = false;
+        break;
+    case 't':
+        trigger = true;
+		break;    
+    default:
+        break;
+    }
 }
 
 /**
@@ -404,72 +255,64 @@ void loop_communication_task()
  */
 void loop_application_task()
 {
-/* --- STATE MACHINE --------------------------------------------------------*/
-// mode is the STATE variable
-// in each state we compute the transitions
-switch (mode) {
-        case IDLEMODE:
-            if (mode_asked == POWERMODE && V_high_filt >= UDC_STARTUP) {
-                mode = STARTUPMODE;
-            }
-        break;
-        case STARTUPMODE:
-            if (duty_cycle > 0.49F ) mode = POWERMODE;
-        break;
-        case POWERMODE:
-            if (mode_asked == IDLEMODE) {
-                mode = IDLEMODE;
-            }
-        break;
-        case ERRORMODE:
-        break;
-    }
-    if (mode_asked == IDLEMODE) mode = IDLEMODE; // global return to idle possible
-/* --- END OF STATE MACHINE -------------------------------------------------*/
+
+    shield.sensors.triggerTwistTempMeas(TEMP_SENSOR_1);
+    shield.sensors.triggerTwistTempMeas(TEMP_SENSOR_2);
+
+    meas_data = shield.sensors.getLatestValue(TEMP_SENSOR_1);
+    if (meas_data != NO_VALUE) temp_1_value = meas_data;
+
+    meas_data = shield.sensors.getLatestValue(TEMP_SENSOR_2);
+    if (meas_data != NO_VALUE) temp_2_value = meas_data;
+
+
 
     if (mode == IDLEMODE)
     {
+        spin.led.turnOff();
         if (!is_downloading) {
-            printk("%d:", mode);
-            printk("% 7.3f:", (double)Vgrid_amplitude_ref);
-            printk("% 7.3f:", (double)I1_low_value);
-            printk("% 7.3f:", (double)I2_low_value);
-            printk("% 7.3f:", (double)V1_low_value);
-            printk("%7.3f:", (double)power.d);
-            printk("%7.3f:", (double)power.q);
-			printk("%7.3f:", (double)Idq_ref.d);
+            printk("%.3f:", (double)I1_low_value);
+            printk("%.3f:", (double)V1_low_value);
+            printk("%.3f:", (double)I_high);
+            printk("%.3f:", (double)V_high);
+            printk("%.3f:", (double)f0);
+            printk("%.3f:", (double)temp_1_value);
+            printk("%.3f:", (double)temp_2_value);
             printk("\n");
+
         } else {
             dump_scope_datas(scope);
             is_downloading = false;
         }
     }
-    else
+    else if (mode == POWERMODE)
     {
-	    printk("%d:", mode);
-	    printk("% 6.2f:", (double)Vgrid_amplitude_ref);
-	    printk("% 6.2f:", (double)Vgrid_amplitude);
-	    printk("% 6.2f:", (double)V1_low_value);
-	    printk("%7.3f:", (double)power.d);
-	    printk("%7.3f:", (double)power.q);
-		printk("%7.3f:", (double)Vdq_ref.d);
-		printk("%7.3f:", (double)Vdq.d);
-		printk("%7.3f:", (double)Vdq.q);
+        spin.led.turnOn();
+
+
+        printk("%.3f:", (double)I1_low_value);
+        printk("%.3f:", (double)V1_low_value);
+        printk("%.3f:", (double)I_high);
+        printk("%.3f:", (double)V_high);
+        printk("%.3f:", (double)f0);
+        printk("%.3f:", (double)temp_1_value);
+        printk("%.3f:", (double)temp_2_value);
         printk("\n");
+
     }
     task.suspendBackgroundMs(100);
 }
 
 /**
  * This is the code loop of the critical task
- * It is executed every 100 micro-seconds defined in the setup_software function.
+ * It is executed every 500 micro-seconds defined in the setup_software function.
  * You can use it to execute an ultra-fast code with the highest priority which cannot be interruped.
  * It is from it that you will control your power flow.
  */
 void loop_critical_task()
 {
     critical_task_counter++;
-    // RETRIEVE MEASUREMENTS
+
     meas_data = shield.sensors.getLatestValue(I1_LOW);
     if (meas_data != NO_VALUE) I1_low_value = meas_data;
 
@@ -482,151 +325,61 @@ void loop_critical_task()
     meas_data = shield.sensors.getLatestValue(I2_LOW);
     if (meas_data != NO_VALUE) I2_low_value = meas_data;
 
-    meas_data = shield.sensors.getLatestValue(V_HIGH);
-    if (meas_data != NO_VALUE) V_high = meas_data;
-
     meas_data = shield.sensors.getLatestValue(I_HIGH);
     if (meas_data != NO_VALUE) I_high = meas_data;
 
-    V_high_filt = vHighFilter.calculateWithReturn(V_high);
+    meas_data = shield.sensors.getLatestValue(V_HIGH);
+    if (meas_data != NO_VALUE) V_high = meas_data;
 
-    Vgrid_meas = V1_low_value-V2_low_value;
-    Igrid_meas = (I1_low_value-I2_low_value)/2;
 
-    // MANAGE OVERCURRENT
-    if (I1_low_value > MAX_CURRENT
-        || I1_low_value < -MAX_CURRENT
-        || I2_low_value > MAX_CURRENT
-        || I2_low_value < -MAX_CURRENT)
+
+    if (mode == IDLEMODE)
     {
-        mode = ERRORMODE;
-    }
-
-
-    if (mode == IDLEMODE || mode == ERRORMODE)
-    {
-        // FIRST WE STOP THE PWM
         if (pwm_enable == true)
         {
             shield.power.stop(ALL);
-            spin.led.turnOff();
-            pwm_enable = false;
         }
-        Vgrid_amplitude = 0.F;
-        duty_cycle = DUTY_MIN;
+        pwm_enable = false;
     }
+    else if (mode == POWERMODE)
+    {
+        trigger = true;
+        theta_before = theta;
+        theta = (ot_modulo_2pi(theta + w0 * Ts));
 
-    if (mode == STARTUPMODE) { // ramp up the common voltage to Udc/2
-        duty_cycle = rate_limiter(0.5F, duty_cycle, 50.0F); // ramp of 50/s
-        if (duty_cycle > 0.5F) {
-            duty_cycle = 0.5F;
-        }
-        shield.power.setDutyCycle(LEG2, 1-duty_cycle);
-        shield.power.setDutyCycle(LEG1, duty_cycle);
-        // WE START THE PWM
+        f0 += k_lin * Ts;
+
+        // if ((theta-theta_before)  < 0.0)
+        // {
+        //     f0 += 50;
+        //     if (f0>1500)
+        //     {
+        //         f0 = 50;
+        //     }
+        //     w0 = 2.0F * PI * f0;
+        // }        
+
+        w0 = 2.0F * PI * f0;
+
+        // duty_cycle = pid.calculateWithReturn(voltage_reference, V1_low_value);
+
+        duty_cycle = (ot_sin(theta)/2.5)+0.5;
+        shield.power.setDutyCycle(LEG1,duty_cycle);
+
+        /* Set POWER ON */
         if (!pwm_enable)
         {
-            shield.power.start(ALL);
             pwm_enable = true;
+            shield.power.start(ALL);
         }
     }
-    if (mode == POWERMODE)
+
+    if (critical_task_counter%decimation == 0) 
     {
-
-        inverter.setVdqRef(Vdq_ref);
-
-        duty_cycle = inverter.calculateDuty(Vgrid_meas,Igrid_meas); 
-
-        Vdq = inverter.getVdq();
-
-		// if (Vdq.q < sync_power_tolerance &&
-		// 	Vdq.q > -sync_power_tolerance && 
-        //     critical_task_counter > 1000)
-		// {
-		// 	is_net_synchronized = true;
-		// }
-
-        shield.power.setDutyCycle(ALL, duty_cycle);
-
-        // theta = ot_modulo_2pi(theta + w0 * Ts);
-
-        // Vab = sogi_v.calc(Vgrid_meas,w0);
-        // Iab = sogi_i.calc(Igrid_meas,w0);
-        // Vdq = Transform::rotation_to_dqo(Vab, theta);
-        // Idq = Transform::rotation_to_dqo(Iab, theta);
-
-        // // original code
-        // Idq_ref_delta.d = pi_voltage_d.calculateWithReturn(Vdq_ref.d, Vdq.d); 
-        // Idq_ref_delta.q = pi_voltage_q.calculateWithReturn(Vdq_ref.q, Vdq.q); 
-
-        // // current test
-        // // Idq_ref_delta.d = 0.0; 
-        // // Idq_ref_delta.q = 0.0; 
-
-
-        // Vdq_output.d = pi_current_d.calculateWithReturn(Idq_ref.d + Idq_ref_delta.d, Idq.d); 
-        // Vdq_output.q = pi_current_q.calculateWithReturn(Idq_ref.q + Idq_ref_delta.q, Idq.q); 
-        
-        // // original code
-        // Vdq_output.d = Vdq_output.d + Vdq_ref.d; 
-        // Vdq_output.q = Vdq_output.q + Vdq_ref.q;
-
-        // // current test
-        // // Vdq_output.d = Vdq_output.d + Idq_ref.d*R_load; 
-        // // Vdq_output.q = Vdq_output.q + Idq_ref.q;
-
-
-        // Vdq_output.o = 0.0;      
-       
-        // Vab_output = Transform::rotation_to_clarke(Vdq_output, theta);
-
-        // Vond = Vab_output.alpha;
-        // duty_cycle = Vond /(2.0F * V_high_filt ) + 0.5F;
-
-
-		// // trigger = true;
-        // angle = ot_modulo_2pi(angle + w0 * Ts);
-		// Vnet = virtual_Vgrid_amplitude * ot_sin(angle);
-        // inverter.calculatePower(Vnet, I1_low_value);
-        // Vq_net = inverter.getVdq().q;
-        // Vab = inverter.getVab();
-        // omega = inverter.getw();
-
-		// if (Vq_net < sync_power_tolerance &&
-		// 	Vq_net > -sync_power_tolerance && critical_task_counter > 1000)
-		// {
-		// 	is_net_synchronized = true;
-		// }
-
-		// if (is_net_synchronized) {
-		// 	Id = inverter.getIdq().d;
-		// 	Iq = inverter.getIdq().q;
-		// 	Ialpha = inverter.getIab().alpha;
-		// 	Ibeta = inverter.getIab().beta;
-
-		// 	// Vdq.d = pi_current_d.calculateWithReturn(0.0, Id);
-		// 	// Vdq.q = pi_current_q.calculateWithReturn(Iq_ref, Iq);
-
-
-		// 	Vdq.d = Vd_ref;
-		// 	Vdq.q = 0;
-		// 	Vdq.o = 0.0;
-		// 	Vab = Transform::rotation_to_clarke(Vdq, inverter.getTheta());
-		// 	Vond = Vab.alpha;
-		// 	duty_cycle = Vond /(2.0F * Udc ) + 0.5F;
-		// }
-		// else
-		// {
-		// 	duty_cycle = 0.5;
-
-		// }
-        // shield.power.setDutyCycle(ALL, duty_cycle);
-
-    }
-    if (critical_task_counter%1 == 0) {
-        spying_mode = (float32_t) mode;
         scope.acquire();
     }
+
+
 }
 
 /**
