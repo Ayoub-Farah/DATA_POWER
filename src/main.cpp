@@ -405,6 +405,32 @@ void meas_set_calib(void)
     }
 }
 
+// Unified measurement subgroup callbacks
+static void meas_cb_idx(enum thingset_callback_reason reason, uint8_t idx)
+{
+    switch (reason) {
+        case THINGSET_CALLBACK_POST_WRITE:
+            shield.sensors.setConversionParametersLinear(
+                system_sensors[idx].channel_reference,
+                system_sensors[idx].gain,
+                system_sensors[idx].offset);
+            break;
+        default:
+            break;
+    }
+}
+
+void meas_cb_0(enum thingset_callback_reason reason) { meas_cb_idx(reason, 0); }
+void meas_cb_1(enum thingset_callback_reason reason) { meas_cb_idx(reason, 1); }
+void meas_cb_2(enum thingset_callback_reason reason) { meas_cb_idx(reason, 2); }
+void meas_cb_3(enum thingset_callback_reason reason) { meas_cb_idx(reason, 3); }
+void meas_cb_4(enum thingset_callback_reason reason) { meas_cb_idx(reason, 4); }
+void meas_cb_5(enum thingset_callback_reason reason) { meas_cb_idx(reason, 5); }
+#ifdef CONFIG_SHIELD_OWNVERTER
+void meas_cb_6(enum thingset_callback_reason reason) { meas_cb_idx(reason, 6); }
+void meas_cb_7(enum thingset_callback_reason reason) { meas_cb_idx(reason, 7); }
+#endif
+
 
 void conf_set_ac_mode(void) {
     if (received_ac_mode >= NUM_OF_AC_MODES) return;
@@ -459,6 +485,14 @@ void setup_routine()
     shield.power.initBuck(ALL);
 
     shield.sensors.enableDefaultTwistSensors();
+
+    // Load stored calibration (gain/offset) from NVM into runtime map
+    for (int i = 0; i < NUM_OF_MEAS; i++) {
+        float32_t g = shield.sensors.retrieveStoredParameterValue(system_sensors[i].channel_reference, gain);
+        float32_t o = shield.sensors.retrieveStoredParameterValue(system_sensors[i].channel_reference, offset);
+        system_sensors[i].gain = g;
+        system_sensors[i].offset = o;
+    }
 
     pid.init(pid_params);
 
@@ -539,17 +573,17 @@ void loop_application_task()
         if (meas_data != NO_VALUE) temp_2_value = meas_data;
 
 
-        // printk("%.3f:", (double)I1_low_value);
-        // printk("%.3f:", (double)V1_low_value);
-        // printk("%.3f:", (double)voltage_reference);
-        // printk("%.3f:", (double)I2_low_value);
-        // printk("%.3f:", (double)V2_low_value);
-        // printk("%.3f:", (double)voltage_reference);
-        // printk("%.3f:", (double)I_high_value);
-        // printk("%.3f:", (double)V_high_value);
-        // printk("%.3f:", (double)temp_1_value);
-        // printk("%.3f:", (double)power_legs[received_leg_number].wLegON);
-        // printk("\n");
+        printk("%.3f:", (double)I1_low_value);
+        printk("%.3f:", (double)V1_low_value);
+        printk("%.3f:", (double)voltage_reference);
+        printk("%.3f:", (double)I2_low_value);
+        printk("%.3f:", (double)V2_low_value);
+        printk("%.3f:", (double)voltage_reference);
+        printk("%.3f:", (double)I_high_value);
+        printk("%.3f:", (double)V_high_value);
+        printk("%.3f:", (double)temp_1_value);
+        printk("%.3f:", (double)power_legs[received_leg_number].wLegON);
+        printk("\n");
 
         // printk("Leg %d: ", received_leg_number);
 

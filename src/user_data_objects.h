@@ -80,22 +80,24 @@ static float32_t meas_data;
 
 
 typedef struct {
-    char *name;
+    const char *name;
     float32_t *address;      /* pointer to the live signal */
     sensor_t    channel_reference;
+    float32_t   gain;        /* calibration gain */
+    float32_t   offset;      /* calibration offset */
 } SystemSensors;
 
 
-static const SystemSensors system_sensors[] = {
-    { "V1", &V1_low_value, V1_LOW },
-    { "V2", &V2_low_value, V2_LOW },
-    { "VH", &V_high_value, V_HIGH },
-    { "I1", &I1_low_value, I1_LOW },
-    { "I2", &I2_low_value, I2_LOW },
-    { "IH", &I_high_value, I_HIGH },
+static SystemSensors system_sensors[] = {
+    { "V1", &V1_low_value, V1_LOW, 1.0f, 0.0f },
+    { "V2", &V2_low_value, V2_LOW, 1.0f, 0.0f },
+    { "VH", &V_high_value, V_HIGH, 1.0f, 0.0f },
+    { "I1", &I1_low_value, I1_LOW, 1.0f, 0.0f },
+    { "I2", &I2_low_value, I2_LOW, 1.0f, 0.0f },
+    { "IH", &I_high_value, I_HIGH, 1.0f, 0.0f },
 #ifdef CONFIG_SHIELD_OWNVERTER
-    { "V3", &V3_low_value, V3_LOW },
-    { "I3", &I3_low_value, I3_LOW },
+    { "V3", &V3_low_value, V3_LOW, 1.0f, 0.0f },
+    { "I3", &I3_low_value, I3_LOW, 1.0f, 0.0f },
 #endif
 };
 
@@ -128,7 +130,7 @@ typedef struct {
     int8_t  wVar;            /* index into tracking_vars[] (0..TRACKING_VARS_COUNT-1) */
     float32_t   wRef;            /* setpoint for selected variable (REFERENCE) */
     float32_t *tracking_var;  // pointer to the live measurement
-    char *tracking_name;      // optional, for debug prints
+    const char *tracking_name;      // optional, for debug prints
 
     /* State toggles */
     bool    wLegON;            /* LEG on/off */
@@ -585,22 +587,79 @@ THINGSET_ADD_ITEM_FLOAT(ID_MEAS_VAL, ID_MEAS_VAL_I3_LOW, "rI3Low_A",  &I3_low_va
 #endif
 
 
-// Group for calibration under /Meas
-THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_CALIB, "xCalib", THINGSET_NO_CALLBACK);
+// Per-measurement subgroups with unified callback
+void meas_cb_0(enum thingset_callback_reason reason);
+void meas_cb_1(enum thingset_callback_reason reason);
+void meas_cb_2(enum thingset_callback_reason reason);
+void meas_cb_3(enum thingset_callback_reason reason);
+void meas_cb_4(enum thingset_callback_reason reason);
+void meas_cb_5(enum thingset_callback_reason reason);
+#ifdef CONFIG_SHIELD_OWNVERTER
+void meas_cb_6(enum thingset_callback_reason reason);
+void meas_cb_7(enum thingset_callback_reason reason);
+#endif
 
-// Exec node for calibration
-THINGSET_ADD_FN_VOID(ID_MEAS_CALIB, ID_MEAS_XCALIB,
-    "xSetParams", &meas_set_calib, THINGSET_ANY_RW);
+// IDs for subgroups
+#define ID_MEAS_CH0   0x535
+#define ID_MEAS_CH1   0x536
+#define ID_MEAS_CH2   0x537
+#define ID_MEAS_CH3   0x538
+#define ID_MEAS_CH4   0x539
+#define ID_MEAS_CH5   0x53A
+#ifdef CONFIG_SHIELD_OWNVERTER
+#define ID_MEAS_CH6   0x53B
+#define ID_MEAS_CH7   0x53C
+#endif
 
-// Arguments
-THINGSET_ADD_ITEM_UINT8(ID_MEAS_XCALIB, ID_MEAS_CALIB_NUM,
-    "wMeasNum", &received_meas_number, THINGSET_ANY_RW, SUBSET_SER);
+// Channel 0 (V1)
+THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_CH0, system_sensors[0].name, &meas_cb_0);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH0, 0x5351, "rValue", system_sensors[0].address, 2, THINGSET_ANY_R, TS_SUBSET_LIVE);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH0, 0x5352, "wGain",  &system_sensors[0].gain, 4, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH0, 0x5353, "wOffset",&system_sensors[0].offset, 4, THINGSET_ANY_RW, SUBSET_SER);
 
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS_XCALIB, ID_MEAS_CALIB_GAIN,
-    "wGain", &received_meas_gain, 2, THINGSET_ANY_RW, SUBSET_SER);
+// Channel 1 (V2)
+THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_CH1, system_sensors[1].name, &meas_cb_1);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH1, 0x5361, "rValue", system_sensors[1].address, 2, THINGSET_ANY_R, TS_SUBSET_LIVE);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH1, 0x5362, "wGain",  &system_sensors[1].gain, 4, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH1, 0x5363, "wOffset",&system_sensors[1].offset, 4, THINGSET_ANY_RW, SUBSET_SER);
 
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS_XCALIB, ID_MEAS_CALIB_OFFSET,
-    "wOffset", &received_meas_offset, 2,  THINGSET_ANY_RW, SUBSET_SER);
+// Channel 2 (VH)
+THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_CH2, system_sensors[2].name, &meas_cb_2);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH2, 0x5371, "rValue", system_sensors[2].address, 2, THINGSET_ANY_R, TS_SUBSET_LIVE);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH2, 0x5372, "wGain",  &system_sensors[2].gain, 4, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH2, 0x5373, "wOffset",&system_sensors[2].offset, 4, THINGSET_ANY_RW, SUBSET_SER);
+
+// Channel 3 (I1)
+THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_CH3, system_sensors[3].name, &meas_cb_3);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH3, 0x5381, "rValue", system_sensors[3].address, 2, THINGSET_ANY_R, TS_SUBSET_LIVE);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH3, 0x5382, "wGain",  &system_sensors[3].gain, 4, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH3, 0x5383, "wOffset",&system_sensors[3].offset, 4, THINGSET_ANY_RW, SUBSET_SER);
+
+// Channel 4 (I2)
+THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_CH4, system_sensors[4].name, &meas_cb_4);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH4, 0x5391, "rValue", system_sensors[4].address, 2, THINGSET_ANY_R, TS_SUBSET_LIVE);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH4, 0x5392, "wGain",  &system_sensors[4].gain, 4, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH4, 0x5393, "wOffset",&system_sensors[4].offset, 4, THINGSET_ANY_RW, SUBSET_SER);
+
+// Channel 5 (IH)
+THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_CH5, system_sensors[5].name, &meas_cb_5);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH5, 0x53A1, "rValue", system_sensors[5].address, 2, THINGSET_ANY_R, TS_SUBSET_LIVE);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH5, 0x53A2, "wGain",  &system_sensors[5].gain, 4, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH5, 0x53A3, "wOffset",&system_sensors[5].offset, 4, THINGSET_ANY_RW, SUBSET_SER);
+
+#ifdef CONFIG_SHIELD_OWNVERTER
+// Channel 6 (V3)
+THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_CH6, system_sensors[6].name, &meas_cb_6);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH6, 0x53B1, "rValue", system_sensors[6].address, 2, THINGSET_ANY_R, TS_SUBSET_LIVE);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH6, 0x53B2, "wGain",  &system_sensors[6].gain, 4, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH6, 0x53B3, "wOffset",&system_sensors[6].offset, 4, THINGSET_ANY_RW, SUBSET_SER);
+
+// Channel 7 (I3)
+THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_CH7, system_sensors[7].name, &meas_cb_7);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH7, 0x53C1, "rValue", system_sensors[7].address, 2, THINGSET_ANY_R, TS_SUBSET_LIVE);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH7, 0x53C2, "wGain",  &system_sensors[7].gain, 4, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CH7, 0x53C3, "wOffset",&system_sensors[7].offset, 4, THINGSET_ANY_RW, SUBSET_SER);
+#endif
 
 
     // Group for Meas ParamMap
