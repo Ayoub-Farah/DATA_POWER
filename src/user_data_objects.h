@@ -32,25 +32,25 @@
  * Legacy measurement symbols (addresses provided elsewhere)
  * ========================================================================= */
 
-static float32_t V1_low_value;
-static float32_t V2_low_value;
-static float32_t V_high_value;
-static float32_t I1_low_value;
-static float32_t I2_low_value;
-static float32_t I_high_value;
+float32_t V1_low_value;
+float32_t V2_low_value;
+float32_t V_high_value;
+float32_t I1_low_value;
+float32_t I2_low_value;
+float32_t I_high_value;
 
 #ifdef CONFIG_SHIELD_OWNVERTER
-    static float32_t V3_low_value;
-    static float32_t I3_low_value;
-    static float32_t temp_value;
+    float32_t V3_low_value;
+    float32_t I3_low_value;
+    float32_t temp_value;
 #else
-    static float32_t temp_1_value;
-    static float32_t temp_2_value;
+    float32_t temp_1_value;
+    float32_t temp_2_value;
 #endif
 
-static float32_t duty_cycle = 0.3;
-static float32_t voltage_reference = 15;
-static float32_t voltage_setpoint = 15;
+float32_t duty_cycle = 0.3;
+float32_t voltage_reference = 15;
+float32_t voltage_setpoint = 15;
 
 // Mode handling
 typedef struct {
@@ -59,19 +59,16 @@ typedef struct {
 } ModeDef;
 
 enum { MODE_IDL = 0, MODE_PWR = 1, NUM_OF_MODES = 2 };
-static const ModeDef modes[] = {
-    { "IDL", MODE_IDL },
-    { "PWR", MODE_PWR },
-};
-static uint8_t mode_current = MODE_IDL;
-static uint8_t mode_prev;
+extern const ModeDef modes[];
+uint8_t mode_current = MODE_IDL;
+uint8_t mode_prev;
 
 // removed legacy xSet intermediate variables
 
 
 
 /* Temporary storage fore measured value (ctrl task) */
-static float32_t meas_data;
+float32_t meas_data;
 
 
 typedef struct {
@@ -83,7 +80,7 @@ typedef struct {
 } SystemSensors;
 
 
-static SystemSensors system_sensors[] = {
+SystemSensors system_sensors[] = {
     { "V1", &V1_low_value, V1_LOW, 1.0f, 0.0f },
     { "V2", &V2_low_value, V2_LOW, 1.0f, 0.0f },
     { "VH", &V_high_value, V_HIGH, 1.0f, 0.0f },
@@ -123,10 +120,10 @@ typedef enum {
 } func_ac_mode_t;
 
 // Backing storage for minimal function set
-static uint8_t    func_domain = FUNC_DOMAIN_DC; // DC by default
-static bool       func_dc_vscs_enable = false;
-static bool       func_dc_droop_enable = false;
-static uint8_t    func_ac_mode = FUNC_AC_GF;
+uint8_t    func_domain = FUNC_DOMAIN_DC; // DC by default
+bool       func_dc_vscs_enable = false;
+bool       func_dc_droop_enable = false;
+uint8_t    func_ac_mode = FUNC_AC_GF;
 
 
 
@@ -160,7 +157,7 @@ typedef struct {
 
 } power_leg_t;
 
-static power_leg_t power_legs[POWER_NUM_LEGS] = {
+power_leg_t power_legs[POWER_NUM_LEGS] = {
     { .wLegON=false, .wCapa=false, .wDriver=false, .wBuck=false, 
       .wDuty=0.0f, .wPhase_deg=0.0f, .wDead_rise_ns=0, .wDead_fall_ns=0, 
       .wFreq_Hz=0.0f },
