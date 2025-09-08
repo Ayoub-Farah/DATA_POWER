@@ -56,20 +56,37 @@ static float32_t duty_cycle = 0.3;
 static float32_t voltage_reference = 15;
 static float32_t voltage_setpoint = 15;
 
+extern uint8_t idle_mode;
+extern uint8_t power_mode;
+static uint8_t local_mode;
 
-extern uint8_t mode;
+static uint8_t received_leg_number;
+static uint8_t received_param_number;
+static float32_t received_value;
+static bool leg_set_value;
+
+
+static uint8_t received_meas_number;
+static float32_t received_meas_gain;
+static float32_t received_meas_offset;
+
+
+static uint8_t received_leg_func_num;
+
+
 
 /* Temporary storage fore measured value (ctrl task) */
 static float32_t meas_data;
 
 
 typedef struct {
-    const char *name;
-    const float32_t *address;      /* pointer to the live signal */
+    char *name;
+    float32_t *address;      /* pointer to the live signal */
     sensor_t    channel_reference;
-} TrackingVariables;
+} SystemSensors;
 
-static const TrackingVariables tracking_vars[] = {
+
+static const SystemSensors system_sensors[] = {
     { "V1", &V1_low_value, V1_LOW },
     { "V2", &V2_low_value, V2_LOW },
     { "VH", &V_high_value, V_HIGH },
@@ -83,6 +100,17 @@ static const TrackingVariables tracking_vars[] = {
 };
 
 
+void conf_set_mode(void);
+void conf_set_leg_on(void);
+void conf_set_leg(void);
+void meas_set_calib(void);
+void conf_set_ac_mode(void);
+void conf_set_ac_param(void);
+// void leg_set_driver(void);
+
+
+
+
 /* =========================================================================
  * Backing storage
  * ========================================================================= */
@@ -90,6 +118,7 @@ static const TrackingVariables tracking_vars[] = {
 /* ---- Driver (global) ---- */
 static bool driver_wEnable = false;     /* global driver enable (legacy POWER_ON/OFF) */
 static bool driver_rStatus = false;     /* global driver status (readback) */
+
 
 /* ---- Power / Legs ----
  * These fields cover the legacy downlink actions:
@@ -99,15 +128,14 @@ typedef struct {
     /* Selection + reference */
     int8_t  wVar;            /* index into tracking_vars[] (0..TRACKING_VARS_COUNT-1) */
     float32_t   wRef;            /* setpoint for selected variable (REFERENCE) */
-    float32_t       rVarValue;   /* live value of selected tracking variable */
-    const char *rVarName;    /* name of selected variable */
+    float32_t *tracking_var;  // pointer to the live measurement
+    char *tracking_name;      // optional, for debug prints
 
     /* State toggles */
-    bool    wLeg;            /* LEG on/off */
+    bool    wLegON;            /* LEG on/off */
     bool    wCapa;           /* CAPA on/off */
     bool    wDriver;         /* DRIVER on/off (per-leg) */
     bool    wBuck;           /* BUCK mode enable */
-    bool    wBoost;          /* BOOST mode enable */
 
     /* PWM-related knobs (kept in leg group for compatibility) */
     float32_t   wDuty;           /* DUTY [0..1] */
@@ -119,26 +147,152 @@ typedef struct {
 } power_leg_t;
 
 static power_leg_t power_legs[POWER_NUM_LEGS] = {
-    { .wVar = 0, .wRef = 0.0f, .rVarValue=0.0f, .rVarName=NULL, 
-      .wLeg=false, .wCapa=false, .wDriver=false, .wBuck=false, .wBoost=false,
+    { .wLegON=false, .wCapa=false, .wDriver=false, .wBuck=false, 
       .wDuty=0.0f, .wPhase_deg=0.0f, .wDead_rise_ns=0, .wDead_fall_ns=0, 
       .wFreq_Hz=0.0f },
-    { .wVar = 1, .wRef = 0.0f, .rVarValue=0.0f, .rVarName=NULL, 
-      .wLeg=false, .wCapa=false, .wDriver=false, .wBuck=false, .wBoost=false,
+    { .wLegON=false, .wCapa=false, .wDriver=false, .wBuck=false, 
       .wDuty=0.0f, .wPhase_deg=0.0f, .wDead_rise_ns=0, .wDead_fall_ns=0, 
       .wFreq_Hz=0.0f },
 #ifdef CONFIG_SHIELD_OWNVERTER
-    { .wVar = 6, .wRef = 0.0f, .wLeg=false, .wCapa=false, .wDriver=false, .wBuck=false, .wBoost=false,
+    { .wVar = 6, .wRef = 0.0f, .wLegON=false, .wCapa=false, .wDriver=false, .wBuck=false, .wBoost=false,
         .wDuty=0.0f, .wPhase_deg=0.0f, .wDead_rise_ns=0, .wDead_fall_ns=0, .wFreq_Hz=0.0f,
         .rVarValue=0.0f, .rVarName=NULL },
 #endif
 
 };
 
-/* ---- Measurements (single analog channel + calibration) ---- */
-static float32_t meas_rANALOG = 0.0f;   /* calibrated analog value (read-only) */
-static float32_t meas_sOffset = 0.0f;   /* persistent calibration offset */
-static float32_t meas_sGain   = 1.0f;   /* persistent calibration gain */
+
+typedef enum {
+    AC_MODE_GRID_FORMING = 0,
+    AC_MODE_GRID_FOLLOWING,
+    NUM_OF_AC_MODES
+} ac_mode_t;
+
+typedef enum {
+    AC_PARAM_P = 0,
+    AC_PARAM_Q,
+    NUM_OF_AC_PARAMS
+} ac_param_t;
+
+
+typedef enum {
+    FUNC_LEG_NONE = 0,
+    FUNC_LEG_BUCK,
+    FUNC_LEG_BOOST,
+    FUNC_LEG_INDEPENDENT,  // nothing configured on other leg
+    NUM_OF_LEG_MODES
+} leg_func_mode_t;
+
+
+
+static uint8_t ac_mode_gf = AC_MODE_GRID_FORMING;
+static uint8_t ac_mode_follow = AC_MODE_GRID_FOLLOWING;
+static uint8_t ac_param_p = AC_PARAM_P;
+static uint8_t ac_param_q = AC_PARAM_Q;
+static uint8_t received_ac_mode;
+static uint8_t received_ac_param;
+
+typedef enum {
+    MEAS_V1 = 0,
+    MEAS_V2,
+    MEAS_VH,
+    MEAS_I1,
+    MEAS_I2,
+    MEAS_IH,
+#ifdef CONFIG_SHIELD_OWNVERTER
+    MEAS_V3,
+    MEAS_I3,
+#endif
+    NUM_OF_MEAS
+} meas_param_t;
+
+// Items inside ParamMap = index → name
+static uint8_t meas_v1 = MEAS_V1;
+static uint8_t meas_v2 = MEAS_V2;
+static uint8_t meas_vh = MEAS_VH;
+static uint8_t meas_i1 = MEAS_I1;
+static uint8_t meas_i2 = MEAS_I2;
+static uint8_t meas_ih = MEAS_IH;
+#ifdef CONFIG_SHIELD_OWNVERTER
+static uint8_t meas_v3 = MEAS_V3;
+static uint8_t meas_i3 = MEAS_I3;
+#endif
+
+typedef enum {
+    PARAM_LEG_ON = 0,
+    PARAM_CAPA,
+    PARAM_DRIVER,
+    PARAM_BUCK,
+    PARAM_BOOST,
+    PARAM_DUTY,
+    PARAM_PHASE,
+    PARAM_DTRISE,
+    PARAM_DTFALL,
+    PARAM_FREQ,
+    PARAM_VAR,
+    PARAM_REF,
+    NUM_OF_PARAMS  // always last = total number
+} leg_param_t;
+
+static uint8_t param_on     = PARAM_LEG_ON;
+static uint8_t param_capa   = PARAM_CAPA;
+static uint8_t param_drv    = PARAM_DRIVER;
+static uint8_t param_buck   = PARAM_BUCK;
+static uint8_t param_duty   = PARAM_DUTY;
+static uint8_t param_phase  = PARAM_PHASE;
+static uint8_t param_dtrise = PARAM_DTRISE;
+static uint8_t param_dtfall = PARAM_DTFALL;
+static uint8_t param_freq   = PARAM_FREQ;
+static uint8_t param_var   = PARAM_VAR;
+static uint8_t param_ref   = PARAM_REF;
+
+
+
+
+void *VariableMap[POWER_NUM_LEGS][NUM_OF_PARAMS] = {
+    [0] = {
+        &power_legs[0].wLegON,
+        &power_legs[0].wCapa,
+        &power_legs[0].wDriver,
+        &power_legs[0].wBuck,
+        &power_legs[0].wDuty,
+        &power_legs[0].wPhase_deg,
+        &power_legs[0].wDead_rise_ns,
+        &power_legs[0].wDead_fall_ns,
+        &power_legs[0].wFreq_Hz,
+        &power_legs[0].wVar,
+        &power_legs[0].wRef
+    },
+    [1] = {
+        &power_legs[1].wLegON,
+        &power_legs[1].wCapa,
+        &power_legs[1].wDriver,
+        &power_legs[1].wBuck,
+        &power_legs[1].wDuty,
+        &power_legs[1].wPhase_deg,
+        &power_legs[1].wDead_rise_ns,
+        &power_legs[1].wDead_fall_ns,
+        &power_legs[1].wFreq_Hz,
+        &power_legs[1].wVar,
+        &power_legs[1].wRef
+    },
+#ifdef CONFIG_SHIELD_OWNVERTER
+    [2] = {
+        &power_legs[2].wLegON,
+        &power_legs[2].wCapa,
+        &power_legs[2].wDriver,
+        &power_legs[2].wBuck,
+        &power_legs[2].wDuty,
+        &power_legs[2].wPhase_deg,
+        &power_legs[2].wDead_rise_ns,
+        &power_legs[2].wDead_fall_ns,
+        &power_legs[2].wFreq_Hz
+        &power_legs[2].wVar,
+        &power_legs[2].wRef
+    }
+#endif
+};
+
 
 /* ---- Communication (subset you requested) ---- */
 static int8_t comm_sync_rRole = 1;  /* 0=Master, 1=Slave (read-only) */
@@ -156,222 +310,342 @@ static void Measurements_xCalibrate(void) { /* empty by request */ }
  * ========================================================================= */
 
 /* Top-level groups */
-#define ID_CONF             0x010
-#define ID_POWER            0x100
-#define ID_MEAS             0x300
-#define ID_MEAS_CAL         0x510
-#define ID_COMM             0x700
-#define ID_COMM_SYNC        0x710
-#define ID_COMM_ANALOG      0x7220
+#define ID_CONF             0x4
+
+
+#define ID_CONF_MOD_SET            0x41
+#define ID_CONF_MOD_SET_INPUT      0x411
+#define ID_CONF_MOD_GET            0x412
+#define ID_CONF_MOD_TYPE_0         0x4120
+#define ID_CONF_MOD_TYPE_1         0x4121
+#define ID_CONF_MOD_TYPE_2         0x4122
+#define ID_CONF_MOD_TYPE_3         0x4123
+#define ID_CONF_MOD_TYPE_4         0x4124
+#define ID_CONF_MOD_TYPE_5         0x4125
+#define ID_CONF_MOD_TYPE_6         0x4126
+
+
+#define ID_CONF_LEG_SET     0x42
+#define ID_CONF_FUNC_SET    0x43
+#define ID_MEAS             0x5
+#define ID_MEAS_VAL         0x51
+#define ID_MEAS_CAL         0x52
+
+#define ID_CONF_LEG_SET_GENERIC     0x429   // container for xSet
+
+/* xSet function itself */
+#define ID_CONF_LEG_XSET            0x4290
+
+/* Arguments for xSet */
+#define ID_CONF_LEG_SET_LEGNUM      0x4291
+#define ID_CONF_LEG_SET_PARAMNUM    0x4292
+#define ID_CONF_LEG_SET_VALUE       0x4293
+
 
 /* Power/Legs sub-groups & items (LEG1) */
-#define ID_PWR_LEG1         0x110
-#define ID_PWR_LEG1_WVAR    0x111
-#define ID_PWR_LEG1_WREF    0x112
-#define ID_PWR_LEG1_WLEG    0x113
-#define ID_PWR_LEG1_WCAPA   0x114
-#define ID_PWR_LEG1_WDRV    0x115
-#define ID_PWR_LEG1_WBUCK   0x116
-#define ID_PWR_LEG1_WBOOST  0x117
-#define ID_PWR_LEG1_WDUTY   0x118
-#define ID_PWR_LEG1_WPHASE  0x119
-#define ID_PWR_LEG1_WDRISE  0x11A
-#define ID_PWR_LEG1_WDFALL  0x11B
-#define ID_PWR_LEG1_WFREQ   0x11C
-#define ID_PWR_LEG1_RVAL    0x11D
-#define ID_PWR_LEG1_RNAME   0x11E
+#define ID_CONF_LEG         0x420
+// #define ID_CONF_LEG_GET_VAL    0x423
+// #define ID_CONF_LEG_GET_NAME   0x424
 
-/* Power/Legs sub-groups & items (LEG2) */
-#define ID_PWR_LEG2         0x120
-#define ID_PWR_LEG2_WVAR    0x121
-#define ID_PWR_LEG2_WREF    0x122
-#define ID_PWR_LEG2_WLEG    0x123
-#define ID_PWR_LEG2_WCAPA   0x124
-#define ID_PWR_LEG2_WDRV    0x125
-#define ID_PWR_LEG2_WBUCK   0x126
-#define ID_PWR_LEG2_WBOOST  0x127
-#define ID_PWR_LEG2_WDUTY   0x128
-#define ID_PWR_LEG2_WPHASE  0x129
-#define ID_PWR_LEG2_WDRISE  0x12A
-#define ID_PWR_LEG2_WDFALL  0x12B
-#define ID_PWR_LEG2_WFREQ   0x12C
-#define ID_PWR_LEG2_RVAL    0x12D
-#define ID_PWR_LEG2_RNAME   0x12E
 
-#ifdef CONFIG_SHIELD_OWNVERTER
-    /* Power/Legs sub-groups & items (LEG3) */
-    #define ID_PWR_LEG3         0x130
-    #define ID_PWR_LEG3_WVAR    0x131
-    #define ID_PWR_LEG3_WREF    0x132
-    #define ID_PWR_LEG3_WLEG    0x133
-    #define ID_PWR_LEG3_WCAPA   0x134
-    #define ID_PWR_LEG3_WDRV    0x135
-    #define ID_PWR_LEG3_WBUCK   0x136
-    #define ID_PWR_LEG3_WBOOST  0x137
-    #define ID_PWR_LEG3_WDUTY   0x138
-    #define ID_PWR_LEG3_WPHASE  0x139
-    #define ID_PWR_LEG3_WDRISE  0x13A
-    #define ID_PWR_LEG3_WDFALL  0x13B
-    #define ID_PWR_LEG3_WFREQ   0x13C
-    #define ID_PWR_LEG3_RVAL    0x13D
-    #define ID_PWR_LEG3_RNAME   0x13E
-#endif
+// #define ID_CONF_LEG_SET_VAR    0x423
+// #define ID_CONF_LEG_SET_REF    0x424
 
-/* Measurement items */
-#define ID_MEAS_RANALOG     0x501
-#define ID_MEAS_SOFFSET     0x511
-#define ID_MEAS_SGAIN       0x512
-#define ID_MEAS_XCAL        0x513
+
+/* /Config/Leg ParamMap group */
+#define ID_CONF_LEG_PARAMMAP       0x4200
+
+/* Items inside ParamMap (indices for VariableMap enum) */
+#define ID_CONF_LEG_PARAM_ON       0x4201
+#define ID_CONF_LEG_PARAM_CAPA     0x4202
+#define ID_CONF_LEG_PARAM_DRV      0x4203
+#define ID_CONF_LEG_PARAM_BCK      0x4204
+#define ID_CONF_LEG_PARAM_DUTY     0x4205
+#define ID_CONF_LEG_PARAM_PHASE    0x4206
+#define ID_CONF_LEG_PARAM_DTRISE   0x4207
+#define ID_CONF_LEG_PARAM_DTFALL   0x4208
+#define ID_CONF_LEG_PARAM_FREQ     0x4209
+#define ID_CONF_LEG_PARAM_VAR     0x4210
+#define ID_CONF_LEG_PARAM_REF     0x4211
+
+
+#define ID_CONF_LEG_SET_ON           0x425
+#define ID_CONF_LEG_SET_ON_NUM       0x4251
+#define ID_CONF_LEG_SET_ON_STATE     0x4252
+#define ID_CONF_LEG_SET_CAPA         0x426
+#define ID_CONF_LEG_SET_DRV          0x427
+#define ID_CONF_LEG_SET_BCK          0x428
+#define ID_CONF_LEG_SET_DUTY         0x42A
+#define ID_CONF_LEG_SET_PHASE        0x42B
+#define ID_CONF_LEG_SET_DTRISE       0x42C
+#define ID_CONF_LEG_SET_DTFALL       0x42D
+#define ID_CONF_LEG_SET_FREQ         0x42E
+#define ID_CONF_LEG_SET_VAR         0x42E
+#define ID_CONF_LEG_SET_REF         0x42E
+
+#define ID_CONF_LEG_FUNC_PARAMMAP       0x440
+#define ID_CONF_LEG_FUNC_BUCK           0x441
+#define ID_CONF_LEG_FUNC_BOOST          0x442
+#define ID_CONF_LEG_FUNC_INDEPENDENT    0x443
+
+#define ID_CONF_LEG_FUNC_XSET       0x444
+#define ID_CONF_LEG_FUNC_LEGNUM     0x445
+#define ID_CONF_LEG_FUNC_NUM        0x446
+
+
+// #define ID_CONF_LEG1_SET_TRVAR    0x421
+// #define ID_CONF_LEG1_SET_TRREF    0x422
+
+
+#define ID_CONF_AC             0x46
+
+#define ID_CONF_AC_PARAMMAP    0x460
+#define ID_CONF_AC_MODE_GF     0x4601
+#define ID_CONF_AC_MODE_FOLLOW 0x4602
+
+#define ID_CONF_AC_PARAMMAP2   0x461
+#define ID_CONF_AC_PARAM_P     0x4611
+#define ID_CONF_AC_PARAM_Q     0x4612
+
+#define ID_CONF_AC_XSETMODE    0x462
+#define ID_CONF_AC_WMODE       0x4621
+
+#define ID_CONF_AC_XSETPARAM   0x463
+#define ID_CONF_AC_WPARAM      0x4631
+
+
+
 
 /* Measurements → individual items */
-#define ID_MEAS_V1_LOW      0x502
-#define ID_MEAS_V2_LOW      0x503
-#define ID_MEAS_V_HIGH      0x504
-#define ID_MEAS_I1_LOW      0x505
-#define ID_MEAS_I2_LOW      0x506
-#define ID_MEAS_I_HIGH      0x507
-#define ID_MEAS_TEMP1       0x508
-#define ID_MEAS_TEMP2       0x509
+#define ID_MEAS_VAL_V1_LOW      0x512
+#define ID_MEAS_VAL_V2_LOW      0x513
+#define ID_MEAS_VAL_V_HIGH      0x514
+#define ID_MEAS_VAL_I1_LOW      0x515
+#define ID_MEAS_VAL_I2_LOW      0x516
+#define ID_MEAS_VAL_I_HIGH      0x517
+#define ID_MEAS_VAL_TEMP1       0x518
+#define ID_MEAS_VAL_TEMP2       0x519
 #ifdef CONFIG_SHIELD_OWNVERTER
-    #define ID_MEAS_V3_LOW      0x50A
-    #define ID_MEAS_I3_LOW      0x50B
+    #define ID_MEAS_VAL_V3_LOW      0x51A
+    #define ID_MEAS_VAL_I3_LOW      0x51B
 #endif
 
-/* Communication items */
-#define ID_COMM_SYNC_RROLE  0x711
-#define ID_COMM_ANALOG_WEN  0x721
-#define ID_COMM_ANALOG_RVAL 0x722
+/* /Meas calibration group */
+#define ID_MEAS_CALIB           0x520   // group "Calib"
+
+/* Exec function */
+#define ID_MEAS_XCALIB          0x521   // exec node xCalib
+
+/* Arguments for xCalib */
+#define ID_MEAS_CALIB_NUM       0x522   // wMeasNum
+#define ID_MEAS_CALIB_GAIN      0x523   // wGain
+#define ID_MEAS_CALIB_OFFSET    0x524   // wOffset
+
+#define ID_MEAS_PARAMMAP        0x510
+
+#define ID_MEAS_PARAM_V1        0x5101
+#define ID_MEAS_PARAM_V2        0x5102
+#define ID_MEAS_PARAM_VH        0x5103
+#define ID_MEAS_PARAM_I1        0x5104
+#define ID_MEAS_PARAM_I2        0x5105
+#define ID_MEAS_PARAM_IH        0x5106
+#ifdef CONFIG_SHIELD_OWNVERTER
+    #define ID_MEAS_PARAM_V3    0x5107
+    #define ID_MEAS_PARAM_I3    0x5108
+#endif
+
 
 /* =========================================================================
  * Groups
  * ========================================================================= */
 
+
 THINGSET_ADD_GROUP(TS_ID_ROOT, ID_CONF,"Config", THINGSET_NO_CALLBACK);
-THINGSET_ADD_GROUP(TS_ID_ROOT, ID_POWER,"Power",        THINGSET_NO_CALLBACK);
-THINGSET_ADD_GROUP(TS_ID_ROOT, ID_MEAS,"Measurements", THINGSET_NO_CALLBACK);
-THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_CAL,"Cal",          THINGSET_NO_CALLBACK);
-THINGSET_ADD_GROUP(TS_ID_ROOT, ID_COMM,"Communication", THINGSET_NO_CALLBACK);
-THINGSET_ADD_GROUP(ID_COMM, ID_COMM_SYNC,"Sync",         THINGSET_NO_CALLBACK);
-THINGSET_ADD_GROUP(ID_COMM, ID_COMM_ANALOG,"Analog",       THINGSET_NO_CALLBACK);
+// THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_CAL,"Cal",          THINGSET_NO_CALLBACK);
+// THINGSET_ADD_GROUP(TS_ID_ROOT, ID_COMM,"Communication", THINGSET_NO_CALLBACK);
+// THINGSET_ADD_GROUP(ID_COMM, ID_COMM_SYNC,"Sync",         THINGSET_NO_CALLBACK);
+// THINGSET_ADD_GROUP(ID_COMM, ID_COMM_ANALOG,"Analog",       THINGSET_NO_CALLBACK);
 
 /* =========================================================================
  * Power → Leg 1
  * ========================================================================= */
-THINGSET_ADD_GROUP( ID_POWER, ID_PWR_LEG1, "LEG1", THINGSET_NO_CALLBACK );
-THINGSET_ADD_ITEM_INT8 (ID_PWR_LEG1, ID_PWR_LEG1_WVAR,   "wVar", &power_legs[0].wVar,        THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG1, ID_PWR_LEG1_WREF,   "wRef", &power_legs[0].wRef, 3,     THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG1, ID_PWR_LEG1_WLEG,   "wLeg", &power_legs[0].wLeg,        THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG1, ID_PWR_LEG1_WCAPA,  "wCapa",&power_legs[0].wCapa,       THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG1, ID_PWR_LEG1_WDRV,   "wDriver",&power_legs[0].wDriver,   THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG1, ID_PWR_LEG1_WBUCK,  "wBuck",&power_legs[0].wBuck,       THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG1, ID_PWR_LEG1_WBOOST, "wBoost",&power_legs[0].wBoost,     THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG1, ID_PWR_LEG1_WDUTY,  "wDuty",&power_legs[0].wDuty, 5,    THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG1, ID_PWR_LEG1_WPHASE, "wPhase_deg",&power_legs[0].wPhase_deg, 1, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_UINT16(ID_PWR_LEG1, ID_PWR_LEG1_WDRISE,"wDead_rise_ns",&power_legs[0].wDead_rise_ns, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_UINT16(ID_PWR_LEG1, ID_PWR_LEG1_WDFALL,"wDead_fall_ns",&power_legs[0].wDead_fall_ns, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG1, ID_PWR_LEG1_WFREQ,  "wFreq_Hz",&power_legs[0].wFreq_Hz, 0, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG1, ID_PWR_LEG1_RVAL,   "rVarValue",&power_legs[0].rVarValue, 4, THINGSET_ANY_R, SUBSET_SER);
-THINGSET_ADD_ITEM_STRING(ID_PWR_LEG1, ID_PWR_LEG1_RNAME, "rVarName", (char*)&power_legs[0].rVarName, 4, THINGSET_ANY_R, SUBSET_SER);
 
-/* =========================================================================
- * Power → Leg 2
- * ========================================================================= */
-THINGSET_ADD_GROUP( ID_POWER, ID_PWR_LEG2, "LEG2", THINGSET_NO_CALLBACK );
-THINGSET_ADD_ITEM_INT8 (ID_PWR_LEG2, ID_PWR_LEG2_WVAR,   "wVar", &power_legs[1].wVar,        THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG2, ID_PWR_LEG2_WREF,   "wRef", &power_legs[1].wRef, 3,     THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG2, ID_PWR_LEG2_WLEG,   "wLeg", &power_legs[1].wLeg,        THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG2, ID_PWR_LEG2_WCAPA,  "wCapa",&power_legs[1].wCapa,       THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG2, ID_PWR_LEG2_WDRV,   "wDriver",&power_legs[1].wDriver,   THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG2, ID_PWR_LEG2_WBUCK,  "wBuck",&power_legs[1].wBuck,       THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG2, ID_PWR_LEG2_WBOOST, "wBoost",&power_legs[1].wBoost,     THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG2, ID_PWR_LEG2_WDUTY,  "wDuty",&power_legs[1].wDuty, 5,    THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG2, ID_PWR_LEG2_WPHASE, "wPhase_deg",&power_legs[1].wPhase_deg, 1, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_UINT16(ID_PWR_LEG2, ID_PWR_LEG2_WDRISE,"wDead_rise_ns",&power_legs[1].wDead_rise_ns, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_UINT16(ID_PWR_LEG2, ID_PWR_LEG2_WDFALL,"wDead_fall_ns",&power_legs[1].wDead_fall_ns, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG2, ID_PWR_LEG2_WFREQ,  "wFreq_Hz",&power_legs[1].wFreq_Hz, 0, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG2, ID_PWR_LEG2_RVAL,   "rVarValue",&power_legs[1].rVarValue, 4, THINGSET_ANY_R, SUBSET_SER);
-THINGSET_ADD_ITEM_STRING(ID_PWR_LEG2, ID_PWR_LEG2_RNAME, "rVarName", (char*)&power_legs[1].rVarName, 4, THINGSET_ANY_R, SUBSET_SER);
+THINGSET_ADD_FN_VOID(ID_CONF,ID_CONF_MOD_SET, "xMode", &conf_set_mode, THINGSET_ANY_RW);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_MOD_SET,ID_CONF_MOD_SET_INPUT, "wMode", &local_mode,  THINGSET_ANY_RW, SUBSET_SER);
+
+THINGSET_ADD_GROUP(ID_CONF, ID_CONF_MOD_GET,"xGetMode", THINGSET_NO_CALLBACK);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_MOD_GET, ID_CONF_MOD_TYPE_0, "IDLEMODE", &idle_mode,  THINGSET_ANY_R, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_MOD_GET, ID_CONF_MOD_TYPE_1, "POWERMODE", &power_mode, THINGSET_ANY_R, SUBSET_SER);
 
 
-/* =========================================================================
- * Power → Leg 3 - In the case of the ownverter
- * ========================================================================= */
-#ifdef CONFIG_SHIELD_OWNVERTER
-
- THINGSET_ADD_GROUP( ID_POWER, ID_PWR_LEG3, "LEG3", THINGSET_NO_CALLBACK );
-THINGSET_ADD_ITEM_INT8 (ID_PWR_LEG3, ID_PWR_LEG3_WVAR,   "wVar", &power_legs[1].wVar,        THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG3, ID_PWR_LEG3_WREF,   "wRef", &power_legs[1].wRef, 3,     THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG3, ID_PWR_LEG3_WLEG,   "wLeg", &power_legs[1].wLeg,        THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG3, ID_PWR_LEG3_WCAPA,  "wCapa",&power_legs[1].wCapa,       THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG3, ID_PWR_LEG3_WDRV,   "wDriver",&power_legs[1].wDriver,   THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG3, ID_PWR_LEG3_WBUCK,  "wBuck",&power_legs[1].wBuck,       THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL (ID_PWR_LEG3, ID_PWR_LEG3_WBOOST, "wBoost",&power_legs[1].wBoost,     THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG3, ID_PWR_LEG3_WDUTY,  "wDuty",&power_legs[1].wDuty, 5,    THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG3, ID_PWR_LEG3_WPHASE, "wPhase_deg",&power_legs[1].wPhase_deg, 1, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_UINT16(ID_PWR_LEG3, ID_PWR_LEG3_WDRISE,"wDead_rise_ns",&power_legs[1].wDead_rise_ns, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_UINT16(ID_PWR_LEG3, ID_PWR_LEG3_WDFALL,"wDead_fall_ns",&power_legs[1].wDead_fall_ns, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG3, ID_PWR_LEG3_WFREQ,  "wFreq_Hz",&power_legs[1].wFreq_Hz, 0, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_PWR_LEG3, ID_PWR_LEG3_RVAL,   "rVarValue",&power_legs[1].rVarValue, 4, THINGSET_ANY_R, SUBSET_SER);
-THINGSET_ADD_ITEM_STRING(ID_PWR_LEG3, ID_PWR_LEG3_RNAME, "rVarName", (char*)&power_legs[1].rVarName, 4, THINGSET_ANY_R, SUBSET_SER);
-#endif
+THINGSET_ADD_GROUP(ID_CONF, ID_CONF_LEG_SET,"Leg", THINGSET_NO_CALLBACK);
+// THINGSET_ADD_FN_VOID(ID_CONF_LEG_SET,ID_CONF_LEG_SET_ON, "xON_OFF", &conf_set_leg_on, THINGSET_ANY_RW);
+// THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_SET_ON,ID_CONF_LEG_SET_ON_NUM, "wLEGNum", &received_leg_number,  THINGSET_ANY_RW, SUBSET_SER);
+// THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_SET_ON,ID_CONF_LEG_SET_ON_STATE, "wLEGStatus", &leg_set_value,  THINGSET_ANY_RW, SUBSET_SER);
 
 
-/* =========================================================================
- * Measurements
- * ========================================================================= */
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS, ID_MEAS_RANALOG, 
-                        "rANALOG", &meas_rANALOG, 4,
-                        THINGSET_ANY_R,  SUBSET_SER );
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CAL, ID_MEAS_SOFFSET, 
-                        "sOffset", &meas_sOffset, 6,
-                        THINGSET_ANY_RW, SUBSET_SER );
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS_CAL, ID_MEAS_SGAIN,   
-                        "sGain",   &meas_sGain,   6,
-                        THINGSET_ANY_RW, SUBSET_SER );
+// Exec function node
+THINGSET_ADD_FN_VOID(ID_CONF_LEG_SET, ID_CONF_LEG_SET_GENERIC,
+    "xSet", &conf_set_leg, THINGSET_ANY_RW);
 
-THINGSET_ADD_FN_VOID( ID_MEAS, ID_MEAS_XCAL, "xCalibrate", &Measurements_xCalibrate,
-                      THINGSET_ANY_RW );
+// Arguments for xSet
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_SET_GENERIC, ID_CONF_LEG_SET_LEGNUM,
+    "wLegNum", &received_leg_number, THINGSET_ANY_RW, SUBSET_SER);
+
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_SET_GENERIC, ID_CONF_LEG_SET_PARAMNUM,
+    "wParamNum", &received_param_number, THINGSET_ANY_RW, SUBSET_SER);
+
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_SET_GENERIC, ID_CONF_LEG_SET_VALUE,
+    "wValue", &received_value, 3, THINGSET_ANY_RW, SUBSET_SER);
+
+
+// Group for the parameter map
+THINGSET_ADD_GROUP(ID_CONF_LEG_SET, ID_CONF_LEG_PARAMMAP,
+    "ParamMap", THINGSET_NO_CALLBACK);
+
+// Items inside ParamMap = index → name mapping
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_PARAMMAP, ID_CONF_LEG_PARAM_ON,
+    "ON", &param_on, THINGSET_ANY_R, SUBSET_SER);
+
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_PARAMMAP, ID_CONF_LEG_PARAM_CAPA,
+    "CAPA", &param_capa, THINGSET_ANY_R, SUBSET_SER);
+
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_PARAMMAP, ID_CONF_LEG_PARAM_DRV,
+    "DRV", &param_drv, THINGSET_ANY_R, SUBSET_SER);
+
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_PARAMMAP, ID_CONF_LEG_PARAM_BCK,
+    "BCK", &param_buck, THINGSET_ANY_R, SUBSET_SER);
+
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_PARAMMAP, ID_CONF_LEG_PARAM_DUTY,
+    "DUTY", &param_duty, THINGSET_ANY_R, SUBSET_SER);
+
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_PARAMMAP, ID_CONF_LEG_PARAM_PHASE,
+    "PHASE", &param_phase, THINGSET_ANY_R, SUBSET_SER);
+
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_PARAMMAP, ID_CONF_LEG_PARAM_DTRISE,
+    "DTRISE", &param_dtrise, THINGSET_ANY_R, SUBSET_SER);
+
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_PARAMMAP, ID_CONF_LEG_PARAM_DTFALL,
+    "DTFALL", &param_dtfall, THINGSET_ANY_R, SUBSET_SER);
+
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_PARAMMAP, ID_CONF_LEG_PARAM_FREQ,
+    "FREQ", &param_freq, THINGSET_ANY_R, SUBSET_SER);
+
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_PARAMMAP, ID_CONF_LEG_PARAM_VAR,
+    "VAR", &param_var, THINGSET_ANY_R, SUBSET_SER);
+
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_PARAMMAP, ID_CONF_LEG_PARAM_REF,
+    "REF", &param_ref, THINGSET_ANY_R, SUBSET_SER);
+
+
+
+
+// Group for AC
+THINGSET_ADD_GROUP(ID_CONF, ID_CONF_AC, "AC", THINGSET_NO_CALLBACK);
+
+// ParamMap: AC modes
+THINGSET_ADD_GROUP(ID_CONF_AC, ID_CONF_AC_PARAMMAP, "ModeMap", THINGSET_NO_CALLBACK);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_PARAMMAP, ID_CONF_AC_MODE_GF, "GRID_FORMING", &ac_mode_gf, THINGSET_ANY_R, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_PARAMMAP, ID_CONF_AC_MODE_FOLLOW, "GRID_FOLLOWING", &ac_mode_follow, THINGSET_ANY_R, SUBSET_SER);
+
+// ParamMap: AC parameters
+THINGSET_ADD_GROUP(ID_CONF_AC, ID_CONF_AC_PARAMMAP2, "ParamMap", THINGSET_NO_CALLBACK);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_PARAMMAP2, ID_CONF_AC_PARAM_P, "P", &ac_param_p, THINGSET_ANY_R, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_PARAMMAP2, ID_CONF_AC_PARAM_Q, "Q", &ac_param_q, THINGSET_ANY_R, SUBSET_SER);
+
+// Exec: set AC mode
+THINGSET_ADD_FN_VOID(ID_CONF_AC, ID_CONF_AC_XSETMODE, "xSetMode", &conf_set_ac_mode, THINGSET_ANY_RW);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_XSETMODE, ID_CONF_AC_WMODE, "wMode", &received_ac_mode, THINGSET_ANY_RW, SUBSET_SER);
+
+// Exec: set AC control parameter
+THINGSET_ADD_FN_VOID(ID_CONF_AC, ID_CONF_AC_XSETPARAM, "xSetParam", &conf_set_ac_param, THINGSET_ANY_RW);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_XSETPARAM, ID_CONF_AC_WPARAM, "wParam", &received_ac_param, THINGSET_ANY_RW, SUBSET_SER);
+
+
+
+// /* =========================================================================
+//  * Measurements
+//  * ========================================================================= */
 
 /* ---- Individual measurements (low-voltage rails, high-voltage, currents, temps) ---- */
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS, ID_MEAS_V1_LOW, 
+
+THINGSET_ADD_GROUP(TS_ID_ROOT, ID_MEAS,"Measurements", THINGSET_NO_CALLBACK);
+THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_VAL,"rValues", THINGSET_NO_CALLBACK);
+
+
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_VAL, ID_MEAS_VAL_V1_LOW, 
                         "rV1Low_V",  &V1_low_value, 2,
                         THINGSET_ANY_R, TS_SUBSET_LIVE);
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS, ID_MEAS_V2_LOW, 
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_VAL, ID_MEAS_VAL_V2_LOW, 
                         "rV2Low_V",  &V2_low_value, 2,
                         THINGSET_ANY_R, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS, ID_MEAS_V_HIGH,"rVHigh_V",   &V_high_value, 2,
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_VAL, ID_MEAS_VAL_V_HIGH,"rVHigh_V",   &V_high_value, 2,
                         THINGSET_ANY_R, SUBSET_SER);
 
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS, ID_MEAS_I1_LOW, "rI1Low_A",  &I1_low_value, 2,
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_VAL, ID_MEAS_VAL_I1_LOW, "rI1Low_A",  &I1_low_value, 2,
                         THINGSET_ANY_R, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS, ID_MEAS_I2_LOW, "rI2Low_A",  &I2_low_value, 2,
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_VAL, ID_MEAS_VAL_I2_LOW, "rI2Low_A",  &I2_low_value, 2,
                         THINGSET_ANY_R, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS, ID_MEAS_I_HIGH,"rIHigh_A",   &I_high_value, 2,
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_VAL, ID_MEAS_VAL_I_HIGH,"rIHigh_A",   &I_high_value, 2,
                         THINGSET_ANY_R, SUBSET_SER);
 
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS, ID_MEAS_TEMP1,  "rTemp_degC",   &temp_1_value, 2,
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_VAL, ID_MEAS_VAL_TEMP1,  "rTemp_degC",   &temp_1_value, 2,
                         THINGSET_ANY_R, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS, ID_MEAS_TEMP2,  "rTemp2_degC",  &temp_2_value, 2,
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_VAL, ID_MEAS_VAL_TEMP2,  "rTemp2_degC",  &temp_2_value, 2,
                         THINGSET_ANY_R, SUBSET_SER);
 
 /* ---- Extra channels present on OWNVERTER builds ---- */
 #ifdef CONFIG_SHIELD_OWNVERTER
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS, ID_MEAS_V3_LOW, "rV3Low_V",  &V3_low_value, 2,
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_VAL, ID_MEAS_VAL_V3_LOW, "rV3Low_V",  &V3_low_value, 2,
                         THINGSET_ANY_R, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_MEAS, ID_MEAS_I3_LOW, "rI3Low_A",  &I3_low_value, 2,
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_VAL, ID_MEAS_VAL_I3_LOW, "rI3Low_A",  &I3_low_value, 2,
                         THINGSET_ANY_R, SUBSET_SER);
 #endif
 
 
-/* =========================================================================
- * Communication
- * ========================================================================= */
-THINGSET_ADD_ITEM_INT8 (ID_COMM_SYNC,   ID_COMM_SYNC_RROLE, "rRole",  &comm_sync_rRole,
-                        THINGSET_ANY_R, SUBSET_SER );
-THINGSET_ADD_ITEM_BOOL (ID_COMM_ANALOG, ID_COMM_ANALOG_WEN, "wEnable",&comm_analog_wEnable,
-                        THINGSET_ANY_RW, SUBSET_SER );
-THINGSET_ADD_ITEM_FLOAT(ID_COMM_ANALOG, ID_COMM_ANALOG_RVAL,"rValue", &comm_analog_rValue, 4,
-                        THINGSET_ANY_R,  SUBSET_SER );
+// Group for calibration under /Meas
+THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_CALIB, "xCalib", THINGSET_NO_CALLBACK);
+
+// Exec node for calibration
+THINGSET_ADD_FN_VOID(ID_MEAS_CALIB, ID_MEAS_XCALIB,
+    "xSetParams", &meas_set_calib, THINGSET_ANY_RW);
+
+// Arguments
+THINGSET_ADD_ITEM_UINT8(ID_MEAS_XCALIB, ID_MEAS_CALIB_NUM,
+    "wMeasNum", &received_meas_number, THINGSET_ANY_RW, SUBSET_SER);
+
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_XCALIB, ID_MEAS_CALIB_GAIN,
+    "wGain", &received_meas_gain, 2, THINGSET_ANY_RW, SUBSET_SER);
+
+THINGSET_ADD_ITEM_FLOAT(ID_MEAS_XCALIB, ID_MEAS_CALIB_OFFSET,
+    "wOffset", &received_meas_offset, 2,  THINGSET_ANY_RW, SUBSET_SER);
+
+
+    // Group for Meas ParamMap
+THINGSET_ADD_GROUP(ID_MEAS, ID_MEAS_PARAMMAP, "rParamMap", THINGSET_NO_CALLBACK);
+
+
+
+THINGSET_ADD_ITEM_UINT8(ID_MEAS_PARAMMAP, ID_MEAS_PARAM_V1,
+    "V1", &meas_v1, THINGSET_ANY_R, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT8(ID_MEAS_PARAMMAP, ID_MEAS_PARAM_V2,
+    "V2", &meas_v2, THINGSET_ANY_R, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT8(ID_MEAS_PARAMMAP, ID_MEAS_PARAM_VH,
+    "VH", &meas_vh, THINGSET_ANY_R, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT8(ID_MEAS_PARAMMAP, ID_MEAS_PARAM_I1,
+    "I1", &meas_i1, THINGSET_ANY_R, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT8(ID_MEAS_PARAMMAP, ID_MEAS_PARAM_I2,
+    "I2", &meas_i2, THINGSET_ANY_R, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT8(ID_MEAS_PARAMMAP, ID_MEAS_PARAM_IH,
+    "IH", &meas_ih, THINGSET_ANY_R, SUBSET_SER);
+#ifdef CONFIG_SHIELD_OWNVERTER
+THINGSET_ADD_ITEM_UINT8(ID_MEAS_PARAMMAP, ID_MEAS_PARAM_V3,
+    "V3", &meas_v3, THINGSET_ANY_R, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT8(ID_MEAS_PARAMMAP, ID_MEAS_PARAM_I3,
+    "I3", &meas_i3, THINGSET_ANY_R, SUBSET_SER);
+#endif
+
+
 
 
 #endif /* DATA_OBJECTS_H */
