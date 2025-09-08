@@ -116,52 +116,7 @@ void conf_mode_cb(enum thingset_callback_reason reason)
 
 // Removed legacy conf_set_leg_on and xSet handlers
 
-void conf_set_ac(enum thingset_callback_reason reason)
-{
-    switch (reason) {
-        case THINGSET_CALLBACK_PRE_WRITE:
-            // Snapshot current values to detect changes after write
-            ac_mode_prev  = ac_mode;
-            ac_param_prev = ac_param;
-            break;
-
-        case THINGSET_CALLBACK_POST_WRITE: {
-            // Check which fields changed and handle accordingly
-            if (ac_mode != ac_mode_prev) {
-                if (ac_mode < NUM_OF_AC_MODES) {
-                    switch ((ac_mode_t)ac_mode) {
-                        case AC_MODE_GRID_FORMING:
-                            // init grid-forming
-                            break;
-                        case AC_MODE_GRID_FOLLOWING:
-                            // init grid-following
-                            break;
-                    }
-                }
-                printk("AC mode changed: %u -> %u\n", (unsigned)ac_mode_prev, (unsigned)ac_mode);
-            }
-
-            if (ac_param != ac_param_prev) {
-                if (ac_param < NUM_OF_AC_PARAMS) {
-                    switch ((ac_param_t)ac_param) {
-                        case AC_PARAM_P:
-                            // control active power
-                            break;
-                        case AC_PARAM_Q:
-                            // control reactive power
-                            break;
-                    }
-                }
-                printk("AC param changed: %u -> %u\n", (unsigned)ac_param_prev, (unsigned)ac_param);
-            }
-            break;
-        }
-
-        default:
-            // ignore PRE/POST_READ in this callback
-            break;
-    }
-}
+// Removed legacy conf_set_ac; superseded by conf_func_cb
 
 
 
@@ -233,6 +188,76 @@ static void conf_set_leg_idx(enum thingset_callback_reason reason, uint8_t i)
 void conf_leg_cb_0(enum thingset_callback_reason reason) { conf_set_leg_idx(reason, 0); }
 void conf_leg_cb_1(enum thingset_callback_reason reason) { conf_set_leg_idx(reason, 1); }
 void conf_leg_cb_2(enum thingset_callback_reason reason) { conf_set_leg_idx(reason, 2); }
+
+// ========= Config → Function (unified) callback =========
+typedef struct {
+    uint8_t domain;
+    bool    dc_vscs;
+    bool    dc_droop;
+    uint8_t ac_mode;
+} func_shadow_t;
+
+static func_shadow_t func_prev;
+
+void conf_func_cb(enum thingset_callback_reason reason)
+{
+    switch (reason) {
+        case THINGSET_CALLBACK_PRE_WRITE:
+            func_prev.domain  = func_domain;
+            func_prev.dc_vscs = func_dc_vscs_enable;
+            func_prev.dc_droop= func_dc_droop_enable;
+            func_prev.ac_mode = func_ac_mode;
+            break;
+
+        case THINGSET_CALLBACK_POST_WRITE:
+            // Basic range guardrails
+            if (func_domain > FUNC_DOMAIN_AC) {
+                func_domain = FUNC_DOMAIN_DC;
+            }
+            if (func_ac_mode > FUNC_AC_GFL) {
+                func_ac_mode = FUNC_AC_GF;
+            }
+
+            // Domain change handling
+            if (func_domain != func_prev.domain) {
+                switch ((func_domain_t)func_domain) {
+                    case FUNC_DOMAIN_DC:
+                        // Optionally disable AC-specific paths
+                        break;
+                    case FUNC_DOMAIN_AC:
+                        // Optionally disable DC-specific paths
+                        break;
+                }
+                printk("Function domain changed: %u -> %u\n",
+                       (unsigned)func_prev.domain, (unsigned)func_domain);
+            }
+
+            // DC feature toggles
+            if (func_dc_vscs_enable != func_prev.dc_vscs) {
+                printk("DC VS/CS feature: %s\n", func_dc_vscs_enable ? "EN" : "DIS");
+            }
+            if (func_dc_droop_enable != func_prev.dc_droop) {
+                printk("DC Droop feature: %s\n", func_dc_droop_enable ? "EN" : "DIS");
+            }
+
+            // AC mode change
+            if (func_ac_mode != func_prev.ac_mode) {
+                switch ((func_ac_mode_t)func_ac_mode) {
+                    case FUNC_AC_GF:
+                        // init grid-forming path as needed
+                        break;
+                    case FUNC_AC_GFL:
+                        // init grid-following path as needed
+                        break;
+                }
+                printk("AC mode changed: %u -> %u\n",
+                       (unsigned)func_prev.ac_mode, (unsigned)func_ac_mode);
+            }
+            break;
+        default:
+            break;
+    }
+}
 
 
 // Removed legacy meas_set_calib

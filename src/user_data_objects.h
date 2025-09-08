@@ -97,9 +97,36 @@ static SystemSensors system_sensors[] = {
 };
 
 
-void conf_set_mode(void);
-void conf_set_leg_on(void);
-void conf_set_ac(enum thingset_callback_reason reason);
+// Unified Function config callback
+void conf_func_cb(enum thingset_callback_reason reason);
+
+/* =========================================================================
+ * Config → Function (DC/AC)
+ * ========================================================================= */
+
+// IDs for unified Function config
+#define ID_CONF_FUNC            0x43
+#define ID_CONF_FUNC_WDOMAIN    0x4301
+#define ID_CONF_FUNC_WDC_VSCS   0x4302
+#define ID_CONF_FUNC_WDC_DROOP  0x4303
+#define ID_CONF_FUNC_WAC_MODE   0x4304
+
+// Function domain and AC mode enums
+typedef enum {
+    FUNC_DOMAIN_DC = 0,
+    FUNC_DOMAIN_AC = 1,
+} func_domain_t;
+
+typedef enum {
+    FUNC_AC_GF = 0,     // Grid-forming
+    FUNC_AC_GFL = 1,    // Grid-following
+} func_ac_mode_t;
+
+// Backing storage for minimal function set
+static uint8_t    func_domain = FUNC_DOMAIN_DC; // DC by default
+static bool       func_dc_vscs_enable = false;
+static bool       func_dc_droop_enable = false;
+static uint8_t    func_ac_mode = FUNC_AC_GF;
 
 
 
@@ -269,6 +296,19 @@ static float32_t comm_analog_rValue  = 0.0f;
 THINGSET_ADD_GROUP(TS_ID_ROOT, ID_CONF,"Config", THINGSET_NO_CALLBACK);
 
 /* =========================================================================
+ * Function (unified, high-level feature flags)
+ * ========================================================================= */
+
+// Top-level Function group
+THINGSET_ADD_GROUP(ID_CONF, ID_CONF_FUNC, "Function", &conf_func_cb);
+
+// Minimal initial set of parameters
+THINGSET_ADD_ITEM_UINT8(ID_CONF_FUNC, ID_CONF_FUNC_WDOMAIN, "wDomain", &func_domain, THINGSET_ANY_RW, NO_SUBSET);
+THINGSET_ADD_ITEM_BOOL (ID_CONF_FUNC, ID_CONF_FUNC_WDC_VSCS, "wDC_VSCS_Enable", &func_dc_vscs_enable, THINGSET_ANY_RW, NO_SUBSET);
+THINGSET_ADD_ITEM_BOOL (ID_CONF_FUNC, ID_CONF_FUNC_WDC_DROOP, "wDC_Droop_Enable", &func_dc_droop_enable, THINGSET_ANY_RW, NO_SUBSET);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_FUNC, ID_CONF_FUNC_WAC_MODE, "wAC_Mode", &func_ac_mode, THINGSET_ANY_RW, NO_SUBSET);
+
+/* =========================================================================
  * Power → Leg 1
  * ========================================================================= */
 
@@ -314,6 +354,8 @@ THINGSET_ADD_ITEM_INT8(ID_CONF_LEG_0, 0x480A, "wVar",    &power_legs[0].wVar,   
 THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_0,0x480B, "wRef",    &power_legs[0].wRef,    3,    THINGSET_ANY_RW, NO_SUBSET);
 #endif
 
+// (Function subgroups replaced by minimal feature set at top of file)
+
 #if (POWER_NUM_LEGS > 1)
 THINGSET_ADD_GROUP(ID_CONF_LEG, ID_CONF_LEG_1, "1", &conf_leg_cb_1);
 THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_1, 0x4811, "wOn",     &power_legs[1].wLegON,        THINGSET_ANY_RW, NO_SUBSET);
@@ -349,23 +391,7 @@ THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_2,0x482B, "wRef",    &power_legs[2].wRef,   
 
 
 
-// Group for AC
-// THINGSET_ADD_GROUP(ID_CONF, ID_CONF_AC, "AC", THINGSET_NO_CALLBACK);
-THINGSET_ADD_GROUP(ID_CONF, ID_CONF_AC, "AC", &conf_set_ac);
-
-// Variables to hold configuration
-static uint8_t ac_mode;
-static uint8_t ac_param;
-
-// Shadow copies to detect which fields changed across a write
-static uint8_t ac_mode_prev;
-static uint8_t ac_param_prev;
-
-THINGSET_ADD_ITEM_UINT8(ID_CONF_AC, ID_CONF_AC_WMODE,
-    "wMode", &ac_mode, THINGSET_ANY_RW, NO_SUBSET);
-
-THINGSET_ADD_ITEM_UINT8(ID_CONF_AC, ID_CONF_AC_WPARAM,
-    "wParam", &ac_param, THINGSET_ANY_RW, NO_SUBSET);
+// Separate AC group removed; go through Config/Function instead
 
 
 
