@@ -116,6 +116,38 @@ void conf_set_leg_on()
     power_legs[received_leg_number].wLegON = leg_set_value;   
 }
 
+void conf_set_ac(enum thingset_callback_reason reason)
+{
+    // Only act after write completes to the group
+    if (reason != THINGSET_CALLBACK_POST_WRITE) {
+        return;
+    }
+
+    if (ac_mode < NUM_OF_AC_MODES) {
+        switch ((ac_mode_t)ac_mode) {
+            case AC_MODE_GRID_FORMING:
+                // init grid-forming
+                break;
+            case AC_MODE_GRID_FOLLOWING:
+                // init grid-following
+                break;
+        }
+    }
+
+    if (ac_param < NUM_OF_AC_PARAMS) {
+        switch ((ac_param_t)ac_param) {
+            case AC_PARAM_P:
+                // control active power
+                break;
+            case AC_PARAM_Q:
+                // control reactive power
+                break;
+        }
+    }
+}
+
+
+
 void conf_set_leg(void)
 {
     if (received_leg_number >= POWER_NUM_LEGS ||

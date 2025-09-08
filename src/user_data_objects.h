@@ -106,7 +106,9 @@ void conf_set_leg(void);
 void meas_set_calib(void);
 void conf_set_ac_mode(void);
 void conf_set_ac_param(void);
-// void leg_set_driver(void);
+
+// ThingSet group callback for /Config/AC
+void conf_set_ac(enum thingset_callback_reason reason);
 
 
 
@@ -115,14 +117,8 @@ void conf_set_ac_param(void);
  * Backing storage
  * ========================================================================= */
 
-/* ---- Driver (global) ---- */
-static bool driver_wEnable = false;     /* global driver enable (legacy POWER_ON/OFF) */
-static bool driver_rStatus = false;     /* global driver status (readback) */
-
 
 /* ---- Power / Legs ----
- * These fields cover the legacy downlink actions:
- *  LEG/CAPA/DRIVER/BUCK/BOOST/REFERENCE/DUTY/PHASE_SHIFT/DEAD_TIME_RISING/DEAD_TIME_FALLING/FREQUENCY
  */
 typedef struct {
     /* Selection + reference */
@@ -325,11 +321,11 @@ static void Measurements_xCalibrate(void) { /* empty by request */ }
 #define ID_CONF_MOD_TYPE_6         0x4126
 
 
-#define ID_CONF_LEG_SET     0x42
-#define ID_CONF_FUNC_SET    0x43
-#define ID_MEAS             0x5
-#define ID_MEAS_VAL         0x51
-#define ID_MEAS_CAL         0x52
+#define ID_CONF_LEG_SET             0x42
+#define ID_CONF_FUNC_SET            0x43
+#define ID_MEAS                     0x5
+#define ID_MEAS_VAL                 0x51
+#define ID_MEAS_CAL                 0x52
 
 #define ID_CONF_LEG_SET_GENERIC     0x429   // container for xSet
 
@@ -343,7 +339,7 @@ static void Measurements_xCalibrate(void) { /* empty by request */ }
 
 
 /* Power/Legs sub-groups & items (LEG1) */
-#define ID_CONF_LEG         0x420
+#define ID_CONF_LEG               0x420
 // #define ID_CONF_LEG_GET_VAL    0x423
 // #define ID_CONF_LEG_GET_NAME   0x424
 
@@ -365,8 +361,8 @@ static void Measurements_xCalibrate(void) { /* empty by request */ }
 #define ID_CONF_LEG_PARAM_DTRISE   0x4207
 #define ID_CONF_LEG_PARAM_DTFALL   0x4208
 #define ID_CONF_LEG_PARAM_FREQ     0x4209
-#define ID_CONF_LEG_PARAM_VAR     0x4210
-#define ID_CONF_LEG_PARAM_REF     0x4211
+#define ID_CONF_LEG_PARAM_VAR      0x4210
+#define ID_CONF_LEG_PARAM_REF      0x4211
 
 
 #define ID_CONF_LEG_SET_ON           0x425
@@ -393,27 +389,21 @@ static void Measurements_xCalibrate(void) { /* empty by request */ }
 #define ID_CONF_LEG_FUNC_NUM        0x446
 
 
-// #define ID_CONF_LEG1_SET_TRVAR    0x421
-// #define ID_CONF_LEG1_SET_TRREF    0x422
-
-
 #define ID_CONF_AC             0x46
+#define ID_CONF_AC_WMODE       0x461
+#define ID_CONF_AC_WPARAM      0x462
 
-#define ID_CONF_AC_PARAMMAP    0x460
-#define ID_CONF_AC_MODE_GF     0x4601
-#define ID_CONF_AC_MODE_FOLLOW 0x4602
+// #define ID_CONF_AC_PARAMMAP    0x460
+// #define ID_CONF_AC_MODE_GF     0x4601
+// #define ID_CONF_AC_MODE_FOLLOW 0x4602
 
-#define ID_CONF_AC_PARAMMAP2   0x461
-#define ID_CONF_AC_PARAM_P     0x4611
-#define ID_CONF_AC_PARAM_Q     0x4612
+// #define ID_CONF_AC_PARAMMAP2   0x461
+// #define ID_CONF_AC_PARAM_P     0x4611
+// #define ID_CONF_AC_PARAM_Q     0x4612
 
-#define ID_CONF_AC_XSETMODE    0x462
-#define ID_CONF_AC_WMODE       0x4621
+// #define ID_CONF_AC_XSETMODE    0x462
 
-#define ID_CONF_AC_XSETPARAM   0x463
-#define ID_CONF_AC_WPARAM      0x4631
-
-
+// #define ID_CONF_AC_XSETPARAM   0x463
 
 
 /* Measurements → individual items */
@@ -425,6 +415,7 @@ static void Measurements_xCalibrate(void) { /* empty by request */ }
 #define ID_MEAS_VAL_I_HIGH      0x517
 #define ID_MEAS_VAL_TEMP1       0x518
 #define ID_MEAS_VAL_TEMP2       0x519
+
 #ifdef CONFIG_SHIELD_OWNVERTER
     #define ID_MEAS_VAL_V3_LOW      0x51A
     #define ID_MEAS_VAL_I3_LOW      0x51B
@@ -503,6 +494,8 @@ THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_SET_GENERIC, ID_CONF_LEG_SET_VALUE,
 THINGSET_ADD_GROUP(ID_CONF_LEG_SET, ID_CONF_LEG_PARAMMAP,
     "ParamMap", THINGSET_NO_CALLBACK);
 
+
+
 // Items inside ParamMap = index → name mapping
 THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_PARAMMAP, ID_CONF_LEG_PARAM_ON,
     "ON", &param_on, THINGSET_ANY_R, SUBSET_SER);
@@ -541,25 +534,39 @@ THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_PARAMMAP, ID_CONF_LEG_PARAM_REF,
 
 
 // Group for AC
-THINGSET_ADD_GROUP(ID_CONF, ID_CONF_AC, "AC", THINGSET_NO_CALLBACK);
+// THINGSET_ADD_GROUP(ID_CONF, ID_CONF_AC, "AC", THINGSET_NO_CALLBACK);
+THINGSET_ADD_GROUP(ID_CONF, ID_CONF_AC, "AC", &conf_set_ac);
 
-// ParamMap: AC modes
-THINGSET_ADD_GROUP(ID_CONF_AC, ID_CONF_AC_PARAMMAP, "ModeMap", THINGSET_NO_CALLBACK);
-THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_PARAMMAP, ID_CONF_AC_MODE_GF, "GRID_FORMING", &ac_mode_gf, THINGSET_ANY_R, SUBSET_SER);
-THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_PARAMMAP, ID_CONF_AC_MODE_FOLLOW, "GRID_FOLLOWING", &ac_mode_follow, THINGSET_ANY_R, SUBSET_SER);
+// Variables to hold configuration
+static uint8_t ac_mode;
+static uint8_t ac_param;
 
-// ParamMap: AC parameters
-THINGSET_ADD_GROUP(ID_CONF_AC, ID_CONF_AC_PARAMMAP2, "ParamMap", THINGSET_NO_CALLBACK);
-THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_PARAMMAP2, ID_CONF_AC_PARAM_P, "P", &ac_param_p, THINGSET_ANY_R, SUBSET_SER);
-THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_PARAMMAP2, ID_CONF_AC_PARAM_Q, "Q", &ac_param_q, THINGSET_ANY_R, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_AC, ID_CONF_AC_WMODE,
+                        "wMode", &ac_mode, THINGSET_ANY_RW, SUBSET_SER);
 
-// Exec: set AC mode
-THINGSET_ADD_FN_VOID(ID_CONF_AC, ID_CONF_AC_XSETMODE, "xSetMode", &conf_set_ac_mode, THINGSET_ANY_RW);
-THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_XSETMODE, ID_CONF_AC_WMODE, "wMode", &received_ac_mode, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_AC, ID_CONF_AC_WPARAM,
+                        "wParam", &ac_param, THINGSET_ANY_RW, SUBSET_SER);
 
-// Exec: set AC control parameter
-THINGSET_ADD_FN_VOID(ID_CONF_AC, ID_CONF_AC_XSETPARAM, "xSetParam", &conf_set_ac_param, THINGSET_ANY_RW);
-THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_XSETPARAM, ID_CONF_AC_WPARAM, "wParam", &received_ac_param, THINGSET_ANY_RW, SUBSET_SER);
+
+
+// // ParamMap: AC modes
+// THINGSET_ADD_GROUP(ID_CONF_AC, ID_CONF_AC_PARAMMAP, "ModeMap", THINGSET_NO_CALLBACK);
+// THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_PARAMMAP, ID_CONF_AC_MODE_GF, "GRID_FORMING", &ac_mode_gf, THINGSET_ANY_R, SUBSET_SER);
+// THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_PARAMMAP, ID_CONF_AC_MODE_FOLLOW, "GRID_FOLLOWING", &ac_mode_follow, THINGSET_ANY_R, SUBSET_SER);
+
+// // ParamMap: AC parameters
+// THINGSET_ADD_GROUP(ID_CONF_AC, ID_CONF_AC_PARAMMAP2, "ParamMap", THINGSET_NO_CALLBACK);
+// THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_PARAMMAP2, ID_CONF_AC_PARAM_P, "P", &ac_param_p, THINGSET_ANY_R, SUBSET_SER);
+// THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_PARAMMAP2, ID_CONF_AC_PARAM_Q, "Q", &ac_param_q, THINGSET_ANY_R, SUBSET_SER);
+
+// // Exec: set AC mode
+// THINGSET_ADD_FN_VOID(ID_CONF_AC, ID_CONF_AC_XSETMODE, "xSetMode", &conf_set_ac_mode, THINGSET_ANY_RW);
+// THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_XSETMODE, ID_CONF_AC_WMODE, "wMode", &received_ac_mode, THINGSET_ANY_RW, SUBSET_SER);
+
+// // Exec: set AC control parameter
+// THINGSET_ADD_FN_VOID(ID_CONF_AC, ID_CONF_AC_XSETPARAM, "xSetParam", &conf_set_ac_param, THINGSET_ANY_RW);
+// THINGSET_ADD_ITEM_UINT8(ID_CONF_AC_XSETPARAM, ID_CONF_AC_WPARAM, "wParam", &received_ac_param, THINGSET_ANY_RW, SUBSET_SER);
+
 
 
 
