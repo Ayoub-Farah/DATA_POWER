@@ -52,9 +52,19 @@ static float32_t duty_cycle = 0.3;
 static float32_t voltage_reference = 15;
 static float32_t voltage_setpoint = 15;
 
-extern uint8_t idle_mode;
-extern uint8_t power_mode;
-static uint8_t local_mode;
+// Mode handling
+typedef struct {
+    const char *name;
+    uint8_t value;
+} ModeDef;
+
+enum { MODE_IDL = 0, MODE_PWR = 1, NUM_OF_MODES = 2 };
+static const ModeDef modes[] = {
+    { "IDL", MODE_IDL },
+    { "PWR", MODE_PWR },
+};
+static uint8_t mode_current = MODE_IDL;
+static uint8_t mode_prev;
 
 // removed legacy xSet intermediate variables
 
@@ -186,11 +196,6 @@ static int8_t comm_sync_rRole = 1;  /* 0=Master, 1=Slave (read-only) */
 static bool  comm_analog_wEnable = false;
 static float32_t comm_analog_rValue  = 0.0f;
 
-/* =========================================================================
- * Empty exec functions (placeholders)
- * ========================================================================= */
-
-static void Measurements_xCalibrate(void) { /* empty by request */ }
 
 /* =========================================================================
  * ID map
@@ -200,16 +205,8 @@ static void Measurements_xCalibrate(void) { /* empty by request */ }
 #define ID_CONF             0x4
 
 
-#define ID_CONF_MOD_SET            0x41
-#define ID_CONF_MOD_SET_INPUT      0x411
-#define ID_CONF_MOD_GET            0x412
-#define ID_CONF_MOD_TYPE_0         0x4120
-#define ID_CONF_MOD_TYPE_1         0x4121
-#define ID_CONF_MOD_TYPE_2         0x4122
-#define ID_CONF_MOD_TYPE_3         0x4123
-#define ID_CONF_MOD_TYPE_4         0x4124
-#define ID_CONF_MOD_TYPE_5         0x4125
-#define ID_CONF_MOD_TYPE_6         0x4126
+#define ID_CONF_MODE               0x41
+#define ID_CONF_MODE_MAP           0x411
 
 
 #define ID_CONF_LEG_SET             0x42
@@ -275,12 +272,16 @@ THINGSET_ADD_GROUP(TS_ID_ROOT, ID_CONF,"Config", THINGSET_NO_CALLBACK);
  * Power → Leg 1
  * ========================================================================= */
 
-THINGSET_ADD_FN_VOID(ID_CONF,ID_CONF_MOD_SET, "xMode", &conf_set_mode, THINGSET_ANY_RW);
-THINGSET_ADD_ITEM_UINT8(ID_CONF_MOD_SET,ID_CONF_MOD_SET_INPUT, "wMode", &local_mode,  THINGSET_ANY_RW, NO_SUBSET);
-
-THINGSET_ADD_GROUP(ID_CONF, ID_CONF_MOD_GET,"xGetMode", THINGSET_NO_CALLBACK);
-THINGSET_ADD_ITEM_UINT8(ID_CONF_MOD_GET, ID_CONF_MOD_TYPE_0, "IDLEMODE", &idle_mode,  THINGSET_ANY_R, NO_SUBSET);
-THINGSET_ADD_ITEM_UINT8(ID_CONF_MOD_GET, ID_CONF_MOD_TYPE_1, "POWERMODE", &power_mode, THINGSET_ANY_R, NO_SUBSET);
+// Mode group (no exec), with writable current mode and a read-only map
+void conf_mode_cb(enum thingset_callback_reason reason);
+THINGSET_ADD_GROUP(ID_CONF, ID_CONF_MODE, "Mode", &conf_mode_cb);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_MODE, 0x4101, "wMode", &mode_current, THINGSET_ANY_RW, NO_SUBSET);
+// Optional read-only map of available modes
+THINGSET_ADD_GROUP(ID_CONF_MODE, ID_CONF_MODE_MAP, "Map", THINGSET_NO_CALLBACK);
+static uint8_t mode_idl_const = MODE_IDL;
+static uint8_t mode_pwr_const = MODE_PWR;
+THINGSET_ADD_ITEM_UINT8(ID_CONF_MODE_MAP, 0x4111, "IDL", &mode_idl_const, THINGSET_ANY_R, NO_SUBSET);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_MODE_MAP, 0x4112, "PWR", &mode_pwr_const, THINGSET_ANY_R, NO_SUBSET);
 
 
 // Parent Leg group (container). We'll add a subgroup per leg as numeric names

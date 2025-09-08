@@ -93,21 +93,24 @@ static Pid pid;
 /*--------------------------------------------------------------- */
 
 /* LIST OF POSSIBLE MODES FOR THE OWNTECH CONVERTER */
-enum serial_interface_menu_mode
-{
-    IDLEMODE = 0,
-    POWERMODE = 1
-};
+// Mode state
+uint8_t mode = MODE_IDL;
 
-uint8_t idle_mode = IDLEMODE;
-uint8_t power_mode = POWERMODE;
-uint8_t mode = IDLEMODE;
-
-void conf_set_mode()
+void conf_mode_cb(enum thingset_callback_reason reason)
 {
-    if(local_mode<=POWERMODE)
-    {
-        mode = local_mode;
+    switch (reason) {
+        case THINGSET_CALLBACK_PRE_WRITE:
+            mode_prev = mode_current;
+            break;
+        case THINGSET_CALLBACK_POST_WRITE:
+            if (mode_current != mode_prev && mode_current < NUM_OF_MODES) {
+                // update runtime mode used by application
+                mode = mode_current;
+                printk("Mode changed: %s (%u)\n", modes[mode].name, (unsigned)mode);
+            }
+            break;
+        default:
+            break;
     }
 }
 
@@ -336,11 +339,11 @@ void loop_communication_task()
         break;
     case 'i':
         printk("idle mode\n");
-        mode = IDLEMODE;
+        mode = MODE_IDL;
         break;
     case 'p':
         printk("power mode\n");
-        mode = POWERMODE;
+        mode = MODE_PWR;
         break;
     case 'u':
         voltage_reference += 0.5;
@@ -360,11 +363,11 @@ void loop_communication_task()
 void loop_application_task()
 {
     static int print_counter = 0;
-    if (mode == IDLEMODE)
+    if (mode == MODE_IDL)
     {
         spin.led.turnOff();
     }
-    else if (mode == POWERMODE)
+    else if (mode == MODE_PWR)
     {
         spin.led.turnOn();
 
@@ -423,7 +426,7 @@ void loop_critical_task()
     if (meas_data != NO_VALUE) V_high_value = meas_data;
 
 
-    if (mode == IDLEMODE)
+    if (mode == MODE_IDL)
     {
         if (pwm_enable == true)
         {
@@ -431,7 +434,7 @@ void loop_critical_task()
         }
         pwm_enable = false;
     }
-    else if (mode == POWERMODE)
+    else if (mode == MODE_PWR)
     {
         duty_cycle = pid.calculateWithReturn(voltage_reference, V1_low_value);
         shield.power.setDutyCycle(ALL,duty_cycle);
