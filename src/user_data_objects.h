@@ -439,63 +439,67 @@ THINGSET_ADD_ITEM_UINT8(ID_CONF_MOD_GET, ID_CONF_MOD_TYPE_0, "IDLEMODE", &idle_m
 THINGSET_ADD_ITEM_UINT8(ID_CONF_MOD_GET, ID_CONF_MOD_TYPE_1, "POWERMODE", &power_mode, THINGSET_ANY_R, SUBSET_SER);
 
 
-// New map-style Leg group
-THINGSET_ADD_GROUP(ID_CONF, ID_CONF_LEG, "Leg", &conf_set_legs);
+// Parent Leg group (container). We'll add a subgroup per leg as numeric names
+THINGSET_ADD_GROUP(ID_CONF, ID_CONF_LEG, "Leg", THINGSET_NO_CALLBACK);
 
-// Backing vars for map-style write to a selected leg
-static uint8_t  leg_sel;           // which leg to apply to
-static uint8_t  leg_sel_prev;
-static bool     leg_on,     leg_on_prev;
-static bool     leg_capa,   leg_capa_prev;
-static bool     leg_driver, leg_driver_prev;
-static bool     leg_buck,   leg_buck_prev;
-static float32_t leg_duty,  leg_duty_prev;
-static float32_t leg_phase_deg, leg_phase_deg_prev;
-static uint16_t leg_dt_rise_ns, leg_dt_rise_ns_prev;
-static uint16_t leg_dt_fall_ns, leg_dt_fall_ns_prev;
-static float32_t leg_freq_hz, leg_freq_hz_prev;
-static int8_t   leg_var,    leg_var_prev;  // measurement index
-static float32_t leg_ref,   leg_ref_prev;
+// Per-leg subgroups: 0..(POWER_NUM_LEGS-1)
 
-// IDs for map-style items
-#define ID_CONF_LEG_WLEG       0x4221
-#define ID_CONF_LEG_WON        0x4222
-#define ID_CONF_LEG_WCAPA      0x4223
-#define ID_CONF_LEG_WDRV       0x4224
-#define ID_CONF_LEG_WBUCK      0x4225
-#define ID_CONF_LEG_WDUTY      0x4226
-#define ID_CONF_LEG_WPHASE     0x4227
-#define ID_CONF_LEG_WDTRISE    0x4228
-#define ID_CONF_LEG_WDTFALL    0x4229
-#define ID_CONF_LEG_WFREQ      0x422A
-#define ID_CONF_LEG_WVAR       0x422B
-#define ID_CONF_LEG_WREF       0x422C
+// Callback wrappers (implemented in main.cpp)
+void conf_leg_cb_0(enum thingset_callback_reason reason);
+void conf_leg_cb_1(enum thingset_callback_reason reason);
+void conf_leg_cb_2(enum thingset_callback_reason reason);
 
-// Items
-THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG, ID_CONF_LEG_WLEG,
-    "wLeg", &leg_sel, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG, ID_CONF_LEG_WON,
-    "wOn", &leg_on, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG, ID_CONF_LEG_WCAPA,
-    "wCapa", &leg_capa, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG, ID_CONF_LEG_WDRV,
-    "wDriver", &leg_driver, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG, ID_CONF_LEG_WBUCK,
-    "wBuck", &leg_buck, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG, ID_CONF_LEG_WDUTY,
-    "wDuty", &leg_duty, 3, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG, ID_CONF_LEG_WPHASE,
-    "wPhase_deg", &leg_phase_deg, 1, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_UINT16(ID_CONF_LEG, ID_CONF_LEG_WDTRISE,
-    "wDTRise_ns", &leg_dt_rise_ns, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_UINT16(ID_CONF_LEG, ID_CONF_LEG_WDTFALL,
-    "wDTFall_ns", &leg_dt_fall_ns, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG, ID_CONF_LEG_WFREQ,
-    "wFreq_Hz", &leg_freq_hz, 1, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_INT8(ID_CONF_LEG, ID_CONF_LEG_WVAR,
-    "wVar", &leg_var, THINGSET_ANY_RW, SUBSET_SER);
-THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG, ID_CONF_LEG_WREF,
-    "wRef", &leg_ref, 3, THINGSET_ANY_RW, SUBSET_SER);
+// IDs for subgroups
+#define ID_CONF_LEG_0  0x480
+#define ID_CONF_LEG_1  0x481
+#define ID_CONF_LEG_2  0x482
+
+#if (POWER_NUM_LEGS > 0)
+THINGSET_ADD_GROUP(ID_CONF_LEG, ID_CONF_LEG_0, "0", &conf_leg_cb_0);
+THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_0, 0x4801, "wOn",     &power_legs[0].wLegON,        THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_0, 0x4802, "wCapa",   &power_legs[0].wCapa,         THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_0, 0x4803, "wDriver", &power_legs[0].wDriver,       THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_0, 0x4804, "wBuck",   &power_legs[0].wBuck,         THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_0,0x4805, "wDuty",   &power_legs[0].wDuty,   3,    THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_0,0x4806, "wPhase_deg", &power_legs[0].wPhase_deg,1,THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT16(ID_CONF_LEG_0,0x4807,"wDTRise_ns", &power_legs[0].wDead_rise_ns, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT16(ID_CONF_LEG_0,0x4808,"wDTFall_ns", &power_legs[0].wDead_fall_ns, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_0,0x4809, "wFreq_Hz", &power_legs[0].wFreq_Hz, 1,  THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_INT8(ID_CONF_LEG_0, 0x480A, "wVar",    &power_legs[0].wVar,          THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_0,0x480B, "wRef",    &power_legs[0].wRef,    3,    THINGSET_ANY_RW, SUBSET_SER);
+#endif
+
+#if (POWER_NUM_LEGS > 1)
+THINGSET_ADD_GROUP(ID_CONF_LEG, ID_CONF_LEG_1, "1", &conf_leg_cb_1);
+THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_1, 0x4811, "wOn",     &power_legs[1].wLegON,        THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_1, 0x4812, "wCapa",   &power_legs[1].wCapa,         THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_1, 0x4813, "wDriver", &power_legs[1].wDriver,       THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_1, 0x4814, "wBuck",   &power_legs[1].wBuck,         THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_1,0x4815, "wDuty",   &power_legs[1].wDuty,   3,    THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_1,0x4816, "wPhase_deg", &power_legs[1].wPhase_deg,1,THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT16(ID_CONF_LEG_1,0x4817,"wDTRise_ns", &power_legs[1].wDead_rise_ns, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT16(ID_CONF_LEG_1,0x4818,"wDTFall_ns", &power_legs[1].wDead_fall_ns, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_1,0x4819, "wFreq_Hz", &power_legs[1].wFreq_Hz, 1,  THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_INT8(ID_CONF_LEG_1, 0x481A, "wVar",    &power_legs[1].wVar,          THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_1,0x481B, "wRef",    &power_legs[1].wRef,    3,    THINGSET_ANY_RW, SUBSET_SER);
+#endif
+
+#if (POWER_NUM_LEGS > 2)
+THINGSET_ADD_GROUP(ID_CONF_LEG, ID_CONF_LEG_2, "2", &conf_leg_cb_2);
+THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_2, 0x4821, "wOn",     &power_legs[2].wLegON,        THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_2, 0x4822, "wCapa",   &power_legs[2].wCapa,         THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_2, 0x4823, "wDriver", &power_legs[2].wDriver,       THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_2, 0x4824, "wBuck",   &power_legs[2].wBuck,         THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_2,0x4825, "wDuty",   &power_legs[2].wDuty,   3,    THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_2,0x4826, "wPhase_deg", &power_legs[2].wPhase_deg,1,THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT16(ID_CONF_LEG_2,0x4827,"wDTRise_ns", &power_legs[2].wDead_rise_ns, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_UINT16(ID_CONF_LEG_2,0x4828,"wDTFall_ns", &power_legs[2].wDead_fall_ns, THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_2,0x4829, "wFreq_Hz", &power_legs[2].wFreq_Hz, 1,  THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_INT8(ID_CONF_LEG_2, 0x482A, "wVar",    &power_legs[2].wVar,          THINGSET_ANY_RW, SUBSET_SER);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_2,0x482B, "wRef",    &power_legs[2].wRef,    3,    THINGSET_ANY_RW, SUBSET_SER);
+#endif
+
+
 
 
 

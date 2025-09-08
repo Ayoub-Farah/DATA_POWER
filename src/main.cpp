@@ -171,91 +171,180 @@ void conf_set_leg(void)
     return;
 }
 
-// New /Config/Leg map-style callback
-void conf_set_legs(enum thingset_callback_reason reason)
+// // New /Config/Leg map-style callback
+// void conf_set_legs(enum thingset_callback_reason reason)
+// {
+//     switch (reason) {
+//         case THINGSET_CALLBACK_PRE_READ:
+//             // Populate w* items with live values so GET returns current state
+//             if (leg_sel < POWER_NUM_LEGS) {
+//                 const uint8_t i = leg_sel;
+//                 leg_on         = power_legs[i].wLegON;
+//                 leg_capa       = power_legs[i].wCapa;
+//                 leg_driver     = power_legs[i].wDriver;
+//                 leg_buck       = power_legs[i].wBuck;
+//                 leg_duty       = power_legs[i].wDuty;
+//                 leg_phase_deg  = power_legs[i].wPhase_deg;
+//                 leg_dt_rise_ns = power_legs[i].wDead_rise_ns;
+//                 leg_dt_fall_ns = power_legs[i].wDead_fall_ns;
+//                 leg_freq_hz    = power_legs[i].wFreq_Hz;
+//                 leg_var        = power_legs[i].wVar;
+//                 leg_ref        = power_legs[i].wRef;
+//             } else {
+//                 leg_on = leg_capa = leg_driver = leg_buck = false;
+//                 leg_duty = leg_phase_deg = leg_freq_hz = leg_ref = 0.0f;
+//                 leg_dt_rise_ns = leg_dt_fall_ns = 0;
+//                 leg_var = -1;
+//             }
+//             break;
+//         case THINGSET_CALLBACK_PRE_WRITE:
+//             leg_sel_prev        = leg_sel;
+//             leg_on_prev         = leg_on;
+//             leg_capa_prev       = leg_capa;
+//             leg_driver_prev     = leg_driver;
+//             leg_buck_prev       = leg_buck;
+//             leg_duty_prev       = leg_duty;
+//             leg_phase_deg_prev  = leg_phase_deg;
+//             leg_dt_rise_ns_prev = leg_dt_rise_ns;
+//             leg_dt_fall_ns_prev = leg_dt_fall_ns;
+//             leg_freq_hz_prev    = leg_freq_hz;
+//             leg_var_prev        = leg_var;
+//             leg_ref_prev        = leg_ref;
+//             break;
+
+//         case THINGSET_CALLBACK_POST_WRITE: {
+//             // validate index
+//             if (leg_sel >= POWER_NUM_LEGS) {
+//                 printk("/Config/Leg: invalid leg %u\n", (unsigned)leg_sel);
+//                 return;
+//             }
+//             const uint8_t i = leg_sel;
+
+//             if (leg_on != leg_on_prev) {
+//                 power_legs[i].wLegON = leg_on;
+//             }
+//             if (leg_capa != leg_capa_prev) {
+//                 power_legs[i].wCapa = leg_capa;
+//                 if (leg_capa)
+//                     shield.power.connectCapacitor((leg_t)i);
+//                 else
+//                     shield.power.disconnectCapacitor((leg_t)i);
+//             }
+//             if (leg_driver != leg_driver_prev) {
+//                 power_legs[i].wDriver = leg_driver;
+//                 if (leg_driver)
+//                     shield.power.connectDriver((leg_t)i);
+//                 else
+//                     shield.power.disconnectDriver((leg_t)i);
+//             }
+//             if (leg_buck != leg_buck_prev) {
+//                 power_legs[i].wBuck = leg_buck;
+//                 // TODO: handle buck mode hardware if applicable
+//             }
+//             if (leg_duty != leg_duty_prev) {
+//                 power_legs[i].wDuty = leg_duty;
+//                 // Optionally: shield.power.setDutyCycle((leg_t)i, leg_duty);
+//             }
+//             if (leg_phase_deg != leg_phase_deg_prev) {
+//                 power_legs[i].wPhase_deg = (int16_t)leg_phase_deg;
+//                 shield.power.setPhaseShift((leg_t)i, (int16_t)leg_phase_deg);
+//             }
+//             if (leg_dt_rise_ns != leg_dt_rise_ns_prev) {
+//                 power_legs[i].wDead_rise_ns = leg_dt_rise_ns;
+//                 shield.power.setDeadTime((leg_t)i, leg_dt_rise_ns, power_legs[i].wDead_fall_ns);
+//             }
+//             if (leg_dt_fall_ns != leg_dt_fall_ns_prev) {
+//                 power_legs[i].wDead_fall_ns = leg_dt_fall_ns;
+//                 shield.power.setDeadTime((leg_t)i, power_legs[i].wDead_rise_ns, leg_dt_fall_ns);
+//             }
+//             if (leg_freq_hz != leg_freq_hz_prev) {
+//                 power_legs[i].wFreq_Hz = leg_freq_hz;
+//                 spin.pwm.setFrequency((uint32_t)leg_freq_hz);
+//             }
+//             if (leg_var != leg_var_prev) {
+//                 power_legs[i].wVar = leg_var;
+//                 if (leg_var >= 0 && leg_var < NUM_OF_MEAS) {
+//                     power_legs[i].tracking_var  = system_sensors[(int)leg_var].address;
+//                     power_legs[i].tracking_name = system_sensors[(int)leg_var].name;
+//                 }
+//             }
+//             if (leg_ref != leg_ref_prev) {
+//                 power_legs[i].wRef = leg_ref;
+//             }
+
+//             break;
+//         }
+//         default:
+//             break;
+//     }
+// }
+
+// Per-leg subgroup callbacks using a common handler
+typedef struct {
+    bool on, capa, driver, buck;
+    float32_t duty, phase_deg, freq_hz, ref;
+    uint16_t dtrise, dtfall;
+    int8_t var;
+} leg_shadow_t;
+
+static leg_shadow_t leg_prev[POWER_NUM_LEGS];
+
+static void conf_set_leg_idx(enum thingset_callback_reason reason, uint8_t i)
 {
     switch (reason) {
         case THINGSET_CALLBACK_PRE_WRITE:
-            leg_sel_prev        = leg_sel;
-            leg_on_prev         = leg_on;
-            leg_capa_prev       = leg_capa;
-            leg_driver_prev     = leg_driver;
-            leg_buck_prev       = leg_buck;
-            leg_duty_prev       = leg_duty;
-            leg_phase_deg_prev  = leg_phase_deg;
-            leg_dt_rise_ns_prev = leg_dt_rise_ns;
-            leg_dt_fall_ns_prev = leg_dt_fall_ns;
-            leg_freq_hz_prev    = leg_freq_hz;
-            leg_var_prev        = leg_var;
-            leg_ref_prev        = leg_ref;
+            leg_prev[i].on       = power_legs[i].wLegON;
+            leg_prev[i].capa     = power_legs[i].wCapa;
+            leg_prev[i].driver   = power_legs[i].wDriver;
+            leg_prev[i].buck     = power_legs[i].wBuck;
+            leg_prev[i].duty     = power_legs[i].wDuty;
+            leg_prev[i].phase_deg= power_legs[i].wPhase_deg;
+            leg_prev[i].dtrise   = power_legs[i].wDead_rise_ns;
+            leg_prev[i].dtfall   = power_legs[i].wDead_fall_ns;
+            leg_prev[i].freq_hz  = power_legs[i].wFreq_Hz;
+            leg_prev[i].var      = power_legs[i].wVar;
+            leg_prev[i].ref      = power_legs[i].wRef;
             break;
 
-        case THINGSET_CALLBACK_POST_WRITE: {
-            // validate index
-            if (leg_sel >= POWER_NUM_LEGS) {
-                printk("/Config/Leg: invalid leg %u\n", (unsigned)leg_sel);
-                return;
-            }
-            const uint8_t i = leg_sel;
-
-            if (leg_on != leg_on_prev) {
-                power_legs[i].wLegON = leg_on;
-            }
-            if (leg_capa != leg_capa_prev) {
-                power_legs[i].wCapa = leg_capa;
-                if (leg_capa)
+        case THINGSET_CALLBACK_POST_WRITE:
+            if (power_legs[i].wCapa != leg_prev[i].capa) {
+                if (power_legs[i].wCapa)
                     shield.power.connectCapacitor((leg_t)i);
                 else
                     shield.power.disconnectCapacitor((leg_t)i);
             }
-            if (leg_driver != leg_driver_prev) {
-                power_legs[i].wDriver = leg_driver;
-                if (leg_driver)
+            if (power_legs[i].wDriver != leg_prev[i].driver) {
+                if (power_legs[i].wDriver)
                     shield.power.connectDriver((leg_t)i);
                 else
                     shield.power.disconnectDriver((leg_t)i);
             }
-            if (leg_buck != leg_buck_prev) {
-                power_legs[i].wBuck = leg_buck;
-                // TODO: handle buck mode hardware if applicable
+            if (power_legs[i].wPhase_deg != leg_prev[i].phase_deg) {
+                shield.power.setPhaseShift((leg_t)i, (int16_t)power_legs[i].wPhase_deg);
             }
-            if (leg_duty != leg_duty_prev) {
-                power_legs[i].wDuty = leg_duty;
-                // Optionally: shield.power.setDutyCycle((leg_t)i, leg_duty);
+            if (power_legs[i].wDead_rise_ns != leg_prev[i].dtrise ||
+                power_legs[i].wDead_fall_ns != leg_prev[i].dtfall) {
+                shield.power.setDeadTime((leg_t)i, power_legs[i].wDead_rise_ns, power_legs[i].wDead_fall_ns);
             }
-            if (leg_phase_deg != leg_phase_deg_prev) {
-                power_legs[i].wPhase_deg = (int16_t)leg_phase_deg;
-                shield.power.setPhaseShift((leg_t)i, (int16_t)leg_phase_deg);
+            if (power_legs[i].wFreq_Hz != leg_prev[i].freq_hz) {
+                spin.pwm.setFrequency((uint32_t)power_legs[i].wFreq_Hz);
             }
-            if (leg_dt_rise_ns != leg_dt_rise_ns_prev) {
-                power_legs[i].wDead_rise_ns = leg_dt_rise_ns;
-                shield.power.setDeadTime((leg_t)i, leg_dt_rise_ns, power_legs[i].wDead_fall_ns);
-            }
-            if (leg_dt_fall_ns != leg_dt_fall_ns_prev) {
-                power_legs[i].wDead_fall_ns = leg_dt_fall_ns;
-                shield.power.setDeadTime((leg_t)i, power_legs[i].wDead_rise_ns, leg_dt_fall_ns);
-            }
-            if (leg_freq_hz != leg_freq_hz_prev) {
-                power_legs[i].wFreq_Hz = leg_freq_hz;
-                spin.pwm.setFrequency((uint32_t)leg_freq_hz);
-            }
-            if (leg_var != leg_var_prev) {
-                power_legs[i].wVar = leg_var;
-                if (leg_var >= 0 && leg_var < NUM_OF_MEAS) {
-                    power_legs[i].tracking_var  = system_sensors[(int)leg_var].address;
-                    power_legs[i].tracking_name = system_sensors[(int)leg_var].name;
+            if (power_legs[i].wVar != leg_prev[i].var) {
+                if (power_legs[i].wVar >= 0 && power_legs[i].wVar < NUM_OF_MEAS) {
+                    power_legs[i].tracking_var  = system_sensors[(int)power_legs[i].wVar].address;
+                    power_legs[i].tracking_name = system_sensors[(int)power_legs[i].wVar].name;
                 }
             }
-            if (leg_ref != leg_ref_prev) {
-                power_legs[i].wRef = leg_ref;
-            }
-
+            // wOn, wBuck, wDuty, wRef applied by higher-level logic as needed
             break;
-        }
         default:
             break;
     }
 }
+
+void conf_leg_cb_0(enum thingset_callback_reason reason) { conf_set_leg_idx(reason, 0); }
+void conf_leg_cb_1(enum thingset_callback_reason reason) { conf_set_leg_idx(reason, 1); }
+void conf_leg_cb_2(enum thingset_callback_reason reason) { conf_set_leg_idx(reason, 2); }
 
 
 void meas_set_calib(void)
@@ -514,40 +603,40 @@ void loop_application_task()
         //     (double)local_gain, (double)local_offset, (double)I_high_value);
 
         // Periodic status print to validate callbacks (every ~1s)
-        if (++print_counter >= 10) {
-            print_counter = 0;
-            printk("AC: mode %u(prev %u) param %u(prev %u)\n",
-                   (unsigned)ac_mode, (unsigned)ac_mode_prev,
-                   (unsigned)ac_param, (unsigned)ac_param_prev);
+        // if (++print_counter >= 10) {
+        //     print_counter = 0;
+        //     printk("AC: mode %u(prev %u) param %u(prev %u)\n",
+        //            (unsigned)ac_mode, (unsigned)ac_mode_prev,
+        //            (unsigned)ac_param, (unsigned)ac_param_prev);
 
-            // Requested values via ThingSet map (leg-agnostic)
-            printk("Leg req: sel=%u on=%d capa=%d drv=%d buck=%d duty=%.3f phase=%.1f dtrise=%u dtfall=%u freq=%.1f var=%d ref=%.3f\n",
-                   (unsigned)leg_sel,
-                   (int)leg_on, (int)leg_capa, (int)leg_driver, (int)leg_buck,
-                   (double)leg_duty, (double)leg_phase_deg,
-                   (unsigned)leg_dt_rise_ns, (unsigned)leg_dt_fall_ns,
-                   (double)leg_freq_hz, (int)leg_var, (double)leg_ref);
+        //     // Requested values via ThingSet map (leg-agnostic)
+        //     printk("Leg req: sel=%u on=%d capa=%d drv=%d buck=%d duty=%.3f phase=%.1f dtrise=%u dtfall=%u freq=%.1f var=%d ref=%.3f\n",
+        //            (unsigned)leg_sel,
+        //            (int)leg_on, (int)leg_capa, (int)leg_driver, (int)leg_buck,
+        //            (double)leg_duty, (double)leg_phase_deg,
+        //            (unsigned)leg_dt_rise_ns, (unsigned)leg_dt_fall_ns,
+        //            (double)leg_freq_hz, (int)leg_var, (double)leg_ref);
 
-            // Current applied state of selected leg
-            if (leg_sel < POWER_NUM_LEGS) {
-                const uint8_t i = leg_sel;
-                printk("Leg[%u] state: on=%d capa=%d drv=%d buck=%d duty=%.3f phase=%.1f dtrise=%u dtfall=%u freq=%.1f var=%d ref=%.3f\n",
-                       (unsigned)i,
-                       (int)power_legs[i].wLegON,
-                       (int)power_legs[i].wCapa,
-                       (int)power_legs[i].wDriver,
-                       (int)power_legs[i].wBuck,
-                       (double)power_legs[i].wDuty,
-                       (double)power_legs[i].wPhase_deg,
-                       (unsigned)power_legs[i].wDead_rise_ns,
-                       (unsigned)power_legs[i].wDead_fall_ns,
-                       (double)power_legs[i].wFreq_Hz,
-                       (int)power_legs[i].wVar,
-                       (double)power_legs[i].wRef);
-            } else {
-                printk("Leg[%u] state: invalid index\n", (unsigned)leg_sel);
-            }
-        }
+        //     // Current applied state of selected leg
+        //     if (leg_sel < POWER_NUM_LEGS) {
+        //         const uint8_t i = leg_sel;
+        //         printk("Leg[%u] state: on=%d capa=%d drv=%d buck=%d duty=%.3f phase=%.1f dtrise=%u dtfall=%u freq=%.1f var=%d ref=%.3f\n",
+        //                (unsigned)i,
+        //                (int)power_legs[i].wLegON,
+        //                (int)power_legs[i].wCapa,
+        //                (int)power_legs[i].wDriver,
+        //                (int)power_legs[i].wBuck,
+        //                (double)power_legs[i].wDuty,
+        //                (double)power_legs[i].wPhase_deg,
+        //                (unsigned)power_legs[i].wDead_rise_ns,
+        //                (unsigned)power_legs[i].wDead_fall_ns,
+        //                (double)power_legs[i].wFreq_Hz,
+        //                (int)power_legs[i].wVar,
+        //                (double)power_legs[i].wRef);
+        //     } else {
+        //         printk("Leg[%u] state: invalid index\n", (unsigned)leg_sel);
+        //     }
+        // }
 
     }
     task.suspendBackgroundMs(100);
