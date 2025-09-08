@@ -541,6 +541,10 @@ THINGSET_ADD_GROUP(ID_CONF, ID_CONF_AC, "AC", &conf_set_ac);
 static uint8_t ac_mode;
 static uint8_t ac_param;
 
+// Shadow copies to detect which fields changed across a write
+static uint8_t ac_mode_prev;
+static uint8_t ac_param_prev;
+
 THINGSET_ADD_ITEM_UINT8(ID_CONF_AC, ID_CONF_AC_WMODE,
                         "wMode", &ac_mode, THINGSET_ANY_RW, SUBSET_SER);
 

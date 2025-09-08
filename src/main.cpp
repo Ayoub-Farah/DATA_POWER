@@ -118,31 +118,48 @@ void conf_set_leg_on()
 
 void conf_set_ac(enum thingset_callback_reason reason)
 {
-    // Only act after write completes to the group
-    if (reason != THINGSET_CALLBACK_POST_WRITE) {
-        return;
-    }
+    switch (reason) {
+        case THINGSET_CALLBACK_PRE_WRITE:
+            // Snapshot current values to detect changes after write
+            ac_mode_prev  = ac_mode;
+            ac_param_prev = ac_param;
+            break;
 
-    if (ac_mode < NUM_OF_AC_MODES) {
-        switch ((ac_mode_t)ac_mode) {
-            case AC_MODE_GRID_FORMING:
-                // init grid-forming
-                break;
-            case AC_MODE_GRID_FOLLOWING:
-                // init grid-following
-                break;
-        }
-    }
+        case THINGSET_CALLBACK_POST_WRITE: {
+            // Check which fields changed and handle accordingly
+            if (ac_mode != ac_mode_prev) {
+                if (ac_mode < NUM_OF_AC_MODES) {
+                    switch ((ac_mode_t)ac_mode) {
+                        case AC_MODE_GRID_FORMING:
+                            // init grid-forming
+                            break;
+                        case AC_MODE_GRID_FOLLOWING:
+                            // init grid-following
+                            break;
+                    }
+                }
+                printk("AC mode changed: %u -> %u\n", (unsigned)ac_mode_prev, (unsigned)ac_mode);
+            }
 
-    if (ac_param < NUM_OF_AC_PARAMS) {
-        switch ((ac_param_t)ac_param) {
-            case AC_PARAM_P:
-                // control active power
-                break;
-            case AC_PARAM_Q:
-                // control reactive power
-                break;
+            if (ac_param != ac_param_prev) {
+                if (ac_param < NUM_OF_AC_PARAMS) {
+                    switch ((ac_param_t)ac_param) {
+                        case AC_PARAM_P:
+                            // control active power
+                            break;
+                        case AC_PARAM_Q:
+                            // control reactive power
+                            break;
+                    }
+                }
+                printk("AC param changed: %u -> %u\n", (unsigned)ac_param_prev, (unsigned)ac_param);
+            }
+            break;
         }
+
+        default:
+            // ignore PRE/POST_READ in this callback
+            break;
     }
 }
 
@@ -501,13 +518,12 @@ void loop_application_task()
         // printk("IH: GAIN=%.4f OFFSET=%.4f RAW=%.3f\n",
         //     (double)local_gain, (double)local_offset, (double)I_high_value);
 
-        printk("Leg %d tracks %s RAW=%.3f REF=%.3f\n",
-       received_leg_number,
-       power_legs[received_leg_number].tracking_name,
-       (double)*(power_legs[received_leg_number].tracking_var),
-       (double)power_legs[received_leg_number].wRef);
-
-        printk("\n");
+        // printk("Leg %d tracks %s RAW=%.3f REF=%.3f\n",
+        //        received_leg_number,
+        //        power_legs[received_leg_number].tracking_name,
+        //        (double)*(power_legs[received_leg_number].tracking_var),
+        //        (double)power_legs[received_leg_number].wRef);
+        // printk("\n");
 
     }
     task.suspendBackgroundMs(100);
