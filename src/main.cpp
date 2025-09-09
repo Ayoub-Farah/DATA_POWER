@@ -38,6 +38,10 @@
 /*--------------OWNTECH Libraries----------------------------- */
 #include "pid.h"
 
+#ifdef USE_NEW_MAIN
+// When using the fused new_main, skip the legacy implementation in this file.
+#else
+
 /*--------------SETUP FUNCTIONS DECLARATION------------------- */
 /* Setups the hardware and software of the system */
 void setup_routine();
@@ -94,6 +98,7 @@ static Pid pid;
 
 /* LIST OF POSSIBLE MODES FOR THE OWNTECH CONVERTER */
 // Mode state
+#ifndef USE_NEW_MAIN
 uint8_t mode = MODE_IDL;
 
 // Define the available modes (extern declared in headers)
@@ -101,6 +106,7 @@ const ModeDef modes[] = {
     { "IDL", MODE_IDL },
     { "PWR", MODE_PWR },
 };
+#endif // USE_NEW_MAIN
 
 /**
  * This is the setup routine.
@@ -276,9 +282,13 @@ void loop_critical_task()
  * This is the main function of this example
  * This function is generic and does not need editing.
  */
+#ifndef USE_NEW_MAIN
 int main(void)
 {
     setup_routine();
 
     return 0;
 }
+
+#endif // USE_NEW_MAIN
+#endif
