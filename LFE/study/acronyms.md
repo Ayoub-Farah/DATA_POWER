@@ -1,0 +1,77 @@
+# Acronyms Glossary
+
+Note: Collected from all documents in this folder for quick reference.
+
+- **ABB**: ABB Group (vendor of power systems equipment and software).
+- **AC**: Alternating Current.
+- **AI**: Artificial Intelligence.
+- **CE**: Continental Europe (synchronous area used by ENTSO‑E context).
+- **CSA**: Canadian Standards Association.
+- **DC**: Direct Current.
+- **DE**: Germany (country code; appears in TenneT NL/DE).
+- **DER**: Distributed Energy Resources.
+- **DFT**: Discrete Fourier Transform.
+- **DSO**: Distribution System Operator.
+- **EMT**: Electromagnetic Transients (time‑domain simulation).
+- **EN**: European Norm (e.g., EN 50160).
+- **ENTSO**: European Network of Transmission System Operators (generic).
+- **ENTSO‑E**: ENTSO for Electricity (pan‑EU TSO association).
+- **ER**: Emergency and Restoration (ENTSO‑E network code).
+- **ERC**: Energy Research Center (e.g., RWTH Aachen ERC).
+- **EU**: European Union.
+- **FACTS**: Flexible AC Transmission Systems.
+- **FFR**: Fast Frequency Response.
+- **FRT**: Fault Ride‑Through.
+- **GE**: GE Vernova (original equipment manufacturer).
+- **GFL**: Grid‑Following (inverter control mode).
+- **GFM**: Grid‑Forming (inverter control mode).
+- **GW**: Gigawatt.
+- **HIL**: Hardware‑in‑the‑Loop (real‑time testing).
+- **HQ**: Hydro‑Québec (Canadian TSO/DSP utility).
+- **HV**: High Voltage.
+- **HVDC**: High Voltage Direct Current.
+- **HVRT**: High Voltage Ride‑Through.
+- **IBR**: Inverter‑Based Resources.
+- **IEA**: International Energy Agency.
+- **IEC**: International Electrotechnical Commission.
+- **IEEE**: Institute of Electrical and Electronics Engineers.
+- **IREQ**: Institut de recherche d’Hydro‑Québec (Hydro‑Québec research institute).
+- **KPI**: Key Performance Indicator.
+- **LCL**: Inductor–Capacitor–Inductor (filter topology for converters).
+- **LF**: LF Energy (Linux Foundation Energy).
+- **LS**: Least Squares (estimation method; e.g., Prony/LS identification).
+- **LV**: Low Voltage.
+- **LVRT**: Low Voltage Ride‑Through.
+- **MIGRATE**: Massive InteGRATion of power Electronic devices (EU research project).
+- **MV**: Medium Voltage.
+- **MVA**: Mega Volt‑Ampere.
+- **MW**: Megawatt.
+- **NC**: Network Code (ENTSO‑E family, e.g., NC RfG, NC HVDC).
+- **NL**: Netherlands (country code; appears in TenneT NL/DE, Alliander NL).
+- **NPCC**: Northeast Power Coordinating Council (North America).
+- **OMICRON**: OMICRON electronics (testing/measurement vendor).
+- **PCC**: Point of Common Coupling.
+- **PLL**: Phase‑Locked Loop.
+- **PMU**: Phasor Measurement Unit.
+- **PQ**: Power Quality.
+- **PSS**: Power System Stabilizer.
+- **PV**: Photovoltaic (solar generation).
+- **PWM**: Pulse‑Width Modulation.
+- **RMS**: Root Mean Square.
+- **ROCOF**: Rate of Change Of Frequency.
+- **RTE**: Réseau de Transport d’Électricité (French TSO).
+- **RWTH**: RWTH Aachen University (Germany).
+- **SARFI**: System Average RMS Variation Frequency Index.
+- **SEAPATH**: LF Energy project for virtualization/platform artifacts for substations/automation.
+- **SOGL**: System Operation Guideline (ENTSO‑E).
+- **SSR**: Sub‑Synchronous Resonance.
+- **STATCOM**: Static Synchronous Compensator.
+- **SVC**: Static Var Compensator.
+- **TDD**: Total Demand Distortion (IEEE 519).
+- **THD**: Total Harmonic Distortion.
+- **TSO**: Transmission System Operator.
+- **UFLS**: Under‑Frequency Load Shedding.
+- **VSM**: Virtual Synchronous Machine (grid‑forming control concept).
+- **WAMPAC**: Wide‑Area Monitoring, Protection, and Control.
+- **WAMS**: Wide‑Area Monitoring System.
+

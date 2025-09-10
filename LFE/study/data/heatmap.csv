@@ -1,0 +1,9 @@
+event_type,RTE,Swissgrid,Elia_50Hertz,Alliander,TenneT,HQ_IREQ,RWTH,GE,OMICRON
+Voltage sags/dips,1,1,1,2,1,2,1,2,2
+Harmonics,1,1,1,1,0,2,1,1,2
+Flicker,0,0,0,2,0,1,0,0,1
+Inter-area oscillations,3,2,1,0,1,0,1,1,0
+Frequency excursions & ROCOF,1,1,1,0,3,1,0,0,0
+Fault Ride-Through (FRT),1,0,1,0,1,0,2,3,1
+Voltage stability margins,1,2,1,0,1,0,0,0,0
+DC grid events,0,0,2,0,1,0,1,0,0
