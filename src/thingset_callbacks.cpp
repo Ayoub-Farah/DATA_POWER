@@ -149,6 +149,8 @@ void conf_func_cb(enum thingset_callback_reason reason)
                 }
                 printk("AC mode changed: %u -> %u\n",
                        (unsigned)func_prev.ac_mode, (unsigned)func_ac_mode);
+                // Notify application layer to reconfigure inverter and gating
+                app_apply_ac_mode(func_ac_mode);
             }
             break;
         default:

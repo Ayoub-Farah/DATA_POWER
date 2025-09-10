@@ -48,6 +48,7 @@ static inline float32_t clampf(float32_t v, float32_t lo, float32_t hi)
 
 void critical_task(void);
 void background_task(void);
+void app_apply_ac_mode(uint8_t new_ac_mode);
 
 /*--------------SETUP FUNCTIONS------------------------------- */
 static void setup_routine()
@@ -66,13 +67,16 @@ static void setup_routine()
         system_sensors[i].offset = o;
     }
 
-    // Initialize single phase inverter in Grid-Forming mode
+    // Initialize single phase inverter according to configured AC mode
     // V_bus initial guess 60 V; will be updated from measurement each cycle
     // grid_Vpk 10 V, grid_w0 for 50 Hz
     const float32_t Vbus_init = 60.0F;
     const float32_t grid_Vpk  = 10.0F;
     const float32_t grid_w0   = 2.0F * PI * 50.0F;
-    inverter.init(FORMING, Vbus_init, grid_Vpk, grid_w0, Ts);
+    inverter.init((func_ac_mode == FUNC_AC_GF) ? FORMING : FOLLOWING,
+                  Vbus_init, grid_Vpk, grid_w0, Ts);
+    // Apply initial mode gating/sync behavior
+    app_apply_ac_mode(func_ac_mode);
 
     // Create tasks
     uint32_t app_task_number = task.createBackground(background_task);
@@ -86,6 +90,10 @@ static void setup_routine()
 
 void background_task()
 {
+    // Compile-time switch to keep strings out of binary when disabled
+    #ifndef ENABLE_VERBOSE_PRINTS
+    #define ENABLE_VERBOSE_PRINTS 0
+    #endif
     // Minimal app task: LED and periodic state printouts for ThingSet verification
     if (mode == MODE_IDL) {
         spin.led.turnOff();
@@ -96,48 +104,35 @@ void background_task()
     static uint32_t tick = 0;
     tick++;
 
+    // Simple test when no DC bus present: reflect AC role via leg state
+    // - GF: turn leg 0 ON
+    // - GFL: blink leg 0 ON/OFF
+    if (mode == MODE_PWR && V_high_value < 5.0f && POWER_NUM_LEGS > 0) {
+        if (func_ac_mode == FUNC_AC_GF) {
+            power_legs[0].wLegON = true;
+        } else {
+            // blink every 500 ms (5 x 100ms ticks)
+            if ((tick % 5u) == 0u) {
+                power_legs[0].wLegON = !power_legs[0].wLegON;
+            }
+        }
+    }
+
     // Print every ~1s to avoid flooding (given 100 ms period below)
     if ((tick % 10u) == 0u) {
-        // Report high-level mode and function selection
-        printk("APP mode=%u (%s) func: domain=%u dc_vscs=%u dc_droop=%u ac_mode=%u\n",
-                (unsigned)mode,
-                modes[(mode < NUM_OF_MODES) ? mode : 0].name,
-                (unsigned)func_domain,
-                (unsigned)func_dc_vscs_enable,
-                (unsigned)func_dc_droop_enable,
-                (unsigned)func_ac_mode);
-
-        // Current references mapped from legs (see critical task):
+        printk("APP m=%u ac=%u\n", (unsigned)mode, (unsigned)func_ac_mode);
+#if ENABLE_VERBOSE_PRINTS
+        // Optional diagnostics (disabled by default to save flash)
         float32_t Iq_ref_dbg = (POWER_NUM_LEGS > 0) ? power_legs[0].wRef : 0.0F;
         float32_t Vpk_ref_dbg = (POWER_NUM_LEGS > 1) ? power_legs[1].wRef : 0.0F;
-        printk("Setpoints: Iq_ref=%.3f A  Vpk_ref=%.3f V\n", (double)Iq_ref_dbg, (double)Vpk_ref_dbg);
-
-        // Per-leg config snapshot
+        printk("Setpoints: Iq=%.3f Vpk=%.3f\n", (double)Iq_ref_dbg, (double)Vpk_ref_dbg);
         for (uint8_t i = 0; i < POWER_NUM_LEGS; i++) {
-            const char *tname = power_legs[i].tracking_name ? power_legs[i].tracking_name : "-";
-            float32_t tval = (power_legs[i].tracking_var) ? *(power_legs[i].tracking_var) : 0.0F;
-            printk("Leg%u: ON=%u CAPA=%u DRV=%u BUCK=%u | Duty=%.3f Ph=%.1fdeg F=%.1fHz | DT(r/f)=(%u/%u)ns | Var=%d(%s)=%.3f Ref=%.3f\n",
-                    (unsigned)i,
-                    (unsigned)power_legs[i].wLegON,
-                    (unsigned)power_legs[i].wCapa,
-                    (unsigned)power_legs[i].wDriver,
-                    (unsigned)power_legs[i].wBuck,
-                    (double)power_legs[i].wDuty,
-                    (double)power_legs[i].wPhase_deg,
-                    (double)power_legs[i].wFreq_Hz,
-                    (unsigned)power_legs[i].wDead_rise_ns,
-                    (unsigned)power_legs[i].wDead_fall_ns,
-                    (int)power_legs[i].wVar,
-                    tname,
-                    (double)tval,
-                    (double)power_legs[i].wRef);
+            printk("Leg%u: ON=%u DRV=%u\n", (unsigned)i,
+                   (unsigned)power_legs[i].wLegON,
+                   (unsigned)power_legs[i].wDriver);
         }
-
-        // Key measurements for quick sanity (if available)
-        printk("Meas: V1=%.3f V  I1=%.3f A  V2=%.3f V  I2=%.3f A  VH=%.3f V  IH=%.3f A\n",
-                (double)V1_low_value, (double)I1_low_value,
-                (double)V2_low_value, (double)I2_low_value,
-                (double)V_high_value, (double)I_high_value);
+        printk("Meas: V1=%.2f VH=%.2f\n", (double)V1_low_value, (double)V_high_value);
+#endif
     }
 
     task.suspendBackgroundMs(100);
@@ -180,12 +175,74 @@ void critical_task()
         return;
 
     }
+
+    // MODE_PWR
+    // Guard: only attempt PWM if DC bus is present
+    const bool bus_ok = (V_high_value > 10.0f);
+    if (!bus_ok) {
+        if (pwm_enable) {
+            shield.power.stop(ALL);
+            pwm_enable = false;
+        }
+        return;
+    }
+
+    // Compute duty from inverter
+    float32_t v_meas = V1_low_value;
+    float32_t i_meas = I1_low_value;
+    float32_t duty = inverter.calculateDuty(v_meas, i_meas);
+    duty = clampf(duty, 0.0f, 0.95f);
+    shield.power.setDutyCycle(ALL, duty);
+
+    // Gating rules
+    if (func_ac_mode == FUNC_AC_GF) {
+        inverter.setPowerOn(true);
+        if (!pwm_enable) {
+            pwm_enable = true;
+            shield.power.start(ALL);
+        }
+    } else {
+        // FOLLOWING: keep power off until sync is achieved
+        if (inverter.getSync()) {
+            inverter.setPowerOn(true);
+            if (!pwm_enable) {
+                pwm_enable = true;
+                shield.power.start(ALL);
+            }
+        } else {
+            inverter.setPowerOn(false);
+            if (pwm_enable) {
+                shield.power.stop(ALL);
+                pwm_enable = false;
+            }
+        }
+    }
 }
 
 int main(void)
 {
     setup_routine();
     return 0;
+}
+
+// Apply AC mode changes (from ThingSet callback)
+void app_apply_ac_mode(uint8_t new_ac_mode)
+{
+    if (new_ac_mode == FUNC_AC_GF) {
+        inverter.setMode(FORMING);
+        inverter.setSyncOff();
+        inverter.setPowerOn(true);
+        // Do not start PWM here; critical task will start it when bus is OK
+    } else {
+        inverter.setMode(FOLLOWING);
+        inverter.setSyncOff();
+        inverter.setPowerOn(false);
+        // Ensure PWM is stopped until sync
+        if (pwm_enable) {
+            shield.power.stop(ALL);
+            pwm_enable = false;
+        }
+    }
 }
 
 #endif // USE_NEW_MAIN

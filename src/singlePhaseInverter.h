@@ -78,6 +78,9 @@ public:
 
     void setSyncOff();
 
+    // Change operating mode at runtime, keeping stored parameters
+    void setMode(inverter_mode mode);
+
 
 private:
     // Internal state variables

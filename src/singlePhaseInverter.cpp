@@ -258,4 +258,9 @@ void singlePhaseInverter::setSyncOff(){
     _sync_delay_counter = 0;
 }
 
+void singlePhaseInverter::setMode(inverter_mode mode){
+    // Reinitialize controller keeping stored parameters and timing
+    // This also resets internal controller states appropriately for the selected mode.
+    init(mode, _V_bus, _grid_Vpk, _w_ref, _Ts);
+}
 

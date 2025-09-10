@@ -95,5 +95,7 @@ extern bool    func_dc_vscs_enable;
 extern bool    func_dc_droop_enable;
 extern uint8_t func_ac_mode;
 
-#endif // USER_DATA_API_H
+/* Application hooks used by ThingSet callbacks */
+void app_apply_ac_mode(uint8_t new_ac_mode);
 
+#endif // USER_DATA_API_H
