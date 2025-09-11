@@ -69,16 +69,10 @@ static float32_t I2_low_value;
 static float32_t I_high;
 static float32_t V_high;
 
-static float32_t temp_1_value;
-static float32_t temp_2_value;
-
 /* Temporary storage fore measured value (ctrl task) */
 static float meas_data;
 
 float32_t duty_cycle = 0.3;
-
-/* Voltage reference */
-static float32_t voltage_reference = 15;
 
 /* PID coefficients for a 8.6ms step response*/
 static float32_t kp = 0.000215;
@@ -93,11 +87,8 @@ static Pid pid;
 
 /* Scope variables */
 
-static bool enable_acq;
-static uint32_t num_trig_ratio_point = 512;
 static const uint16_t NB_DATAS = 2048; //Number of data acquired
 static const float32_t minimal_step = 1.0F / (float32_t) NB_DATAS;
-static uint16_t number_of_cycle = 2;
 static ScopeMimicry scope(NB_DATAS, 5);
 static bool is_downloading;
 static bool trigger = false;
@@ -289,12 +280,6 @@ void loop_critical_task()
     meas_data = shield.sensors.getLatestValue(V_HIGH);
     if (meas_data != NO_VALUE) V_high = meas_data;
 
-    if (V1_low_value>=2) // If VDC is ON, starts sequence with small delay
-    {
-        mode = SEQUENCEMODE;
-        trigger = true;
-        counter_seq = 0;
-    }
 
     if (mode == IDLEMODE)
     {
@@ -303,6 +288,13 @@ void loop_critical_task()
             shield.power.stop(ALL);
         }
         pwm_enable = false;
+
+        if (V1_low_value>=2) // If VDC is ON, starts sequence with small delay
+        {
+            mode = SEQUENCEMODE;
+            trigger = true;
+            counter_seq = 0;
+        }
         
     }
     else if (mode == DECHARGEMODE)
@@ -339,7 +331,7 @@ void loop_critical_task()
         }
         if(counter_seq >= 1 and counter_seq < 1.1)
         {
-            g=2;
+            mode == IDLEMODE;
         }
         if(g == 0) // SM is off
         {
