@@ -98,6 +98,7 @@ static bool trigger = false;
 static uint8_t g = 2;
 static float32_t g_float;
 static float32_t counter_seq;
+static float32_t decalage_source = 5;
 /*--------------------------------------------------------------- */
 
 /* LIST OF POSSIBLE MODES FOR THE OWNTECH CONVERTER */
@@ -309,27 +310,27 @@ void loop_critical_task()
     else if (mode == SEQUENCEMODE)
     {
         
-        if(counter_seq >= 0 and counter_seq < 0.1)
+        if(counter_seq >= decalage_source + 0 and counter_seq < decalage_source + 0.1)
         {
             g=2;
         }
-        if(counter_seq >= 0.1 and counter_seq < 0.2)
+        if(counter_seq >= decalage_source + 0.1 and counter_seq < decalage_source +  0.2)
         {
             g=1;
         }
-        if(counter_seq >= 0.2 and counter_seq < 0.7)
+        if(counter_seq >= decalage_source + 0.2 and counter_seq < decalage_source + 0.7)
         {
             g=0;
         }
-        if(counter_seq >= 0.7 and counter_seq < 0.8)
+        if(counter_seq >= decalage_source + 0.7 and counter_seq < decalage_source + 0.8)
         {
             g=2;
         }
-        if(counter_seq >= 0.8 and counter_seq < 1)
+        if(counter_seq >= decalage_source + 0.8 and counter_seq < decalage_source + 1)
         {
             g=1;
         }
-        if(counter_seq >= 1 and counter_seq < 1.1)
+        if(counter_seq >= decalage_source + 1 and counter_seq < decalage_source + 1.1)
         {
             mode == IDLEMODE;
         }
