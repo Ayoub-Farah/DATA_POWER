@@ -54,7 +54,7 @@ void loop_critical_task();
 /*--------------USER VARIABLES DECLARATIONS------------------- */
 
 /* [us] period of the control task */
-static uint32_t control_task_period = 100;
+static uint32_t control_task_period = 100/1000000;
 /* [bool] state of the PWM (ctrl task) */
 static bool pwm_enable = false;
 
@@ -104,16 +104,17 @@ static bool trigger = false;
 
 /* SM switching variables */
 
-static uint8_t g = 1;
-
+static uint8_t g = 2;
+static float32_t g_float;
+static float32_t counter_seq;
 /*--------------------------------------------------------------- */
 
 /* LIST OF POSSIBLE MODES FOR THE OWNTECH CONVERTER */
 enum serial_interface_menu_mode
 {
     IDLEMODE = 0,
-    POWERMODE,
-    SWITCHMODE
+    DECHARGEMODE,
+    SEQUENCEMODE
 };
 
 uint8_t mode = IDLEMODE;
@@ -170,11 +171,11 @@ void setup_routine()
     /* Configure scope channels, what measurelents do you want to acquire? */
     scope.connectChannel(I1_low_value, "I_SM");
     scope.connectChannel(V1_low_value, "V_SM");
-    scope.connectChannel(duty_cycle, "duty_cycle");
-    scope.connectChannel(I_high, "I_high"); //I_High indicates if the Q1 keeps conducting or not after bootstrap capacitor is discharged, if yes body diode conducts, if not the SM goes to blocked mode
-    scope.connectChannel(V_high, "V_high");
+    scope.connectChannel(g_float, "mode");
+    scope.connectChannel(I_high, "I_high"); // to verify if there is nothing
+    scope.connectChannel(V_high, "V_high"); // to verify if there is nothing
     scope.set_trigger(&a_trigger);
-    scope.set_delay(0.2F);
+    scope.set_delay(0.0F);
     scope.start();
     //Vc_BTS indicates the bootstrap capacitor charge level, we have to measure it externally
 
@@ -207,13 +208,7 @@ void loop_communication_task()
         printk(" ________________________________________ \n"
                "|     ---- MENU buck voltage mode ----   |\n"
                "|     press i : idle mode                |\n"
-               "|     press p : power mode               |\n"
-               "|     press s : indepedent switch mode   |\n"
-               "|     press u : duty cycle UP            |\n"
-               "|     press d : duty cycle DOWN          |\n"
-               "|     press o : SM is ON                 |\n"
-               "|     press f : SM is OFF                |\n"
-               "|     press b : SM is BLOCKED            |\n"
+               "|     press d : discharge capacitor mode |\n"
                "|     press r : download datas           |\n"
                "|________________________________________|\n\n");
         /*------------------------------------------------------ */
@@ -222,28 +217,14 @@ void loop_communication_task()
         printk("idle mode\n");
         mode = IDLEMODE;
         break;
-    case 'p':
-        printk("power mode\n");
-        mode = POWERMODE;
-        break;
-    case 'u':
-        duty_cycle += 0.05;
-        break;
     case 'd':
-        duty_cycle -= 0.05;
+        printk("power mode\n");
+        mode = DECHARGEMODE;
         break;
     case 's':
-        mode = SWITCHMODE;
+        mode = SEQUENCEMODE;
         trigger = true;
-        break;
-    case 'o': //SM ON
-        g= 1;
-        break;
-    case 'f': //SM OFF
-        g= 0;
-        break;
-    case 'b': //Block SM
-        g= 2;
+        counter_seq = 0;
         break;
     case 'r':
         is_downloading = true;
@@ -264,11 +245,11 @@ void loop_application_task()
     {
         spin.led.turnOff();
     }
-    else if (mode == POWERMODE)
+    else if (mode == DECHARGEMODE)
     {
         spin.led.turnOn();
     }
-    else if (mode == SWITCHMODE)
+    else if (mode == SEQUENCEMODE)
     {
         spin.led.toggle();
     }
@@ -278,7 +259,7 @@ void loop_application_task()
         printk("%.3f:", (double)V1_low_value);
         printk("%.3f:", (double)V_high);
         printk("\n");
-    task.suspendBackgroundMs(100);
+    task.suspendBackgroundMs(1);
 }
 
 /**
@@ -308,6 +289,12 @@ void loop_critical_task()
     meas_data = shield.sensors.getLatestValue(V_HIGH);
     if (meas_data != NO_VALUE) V_high = meas_data;
 
+    if (V1_low_value>=2) // If VDC is ON, starts sequence with small delay
+    {
+        mode = SEQUENCEMODE;
+        trigger = true;
+        counter_seq = 0;
+    }
 
     if (mode == IDLEMODE)
     {
@@ -316,22 +303,44 @@ void loop_critical_task()
             shield.power.stop(ALL);
         }
         pwm_enable = false;
+        
     }
-    else if (mode == POWERMODE)
+    else if (mode == DECHARGEMODE)
     {
-        shield.power.setDutyCycle(LEG1,duty_cycle);
-        scope.acquire();
-        /* Set POWER ON */
+        shield.power.setDutyCycle(LEG1,0.0);
         if (!pwm_enable)
         {
             pwm_enable = true;
             shield.power.start(LEG1);
         }
     }
-    else if (mode == SWITCHMODE)
+    else if (mode == SEQUENCEMODE)
     {
         
-
+        if(counter_seq >= 0 and counter_seq < 0.1)
+        {
+            g=2;
+        }
+        if(counter_seq >= 0.1 and counter_seq < 0.2)
+        {
+            g=1;
+        }
+        if(counter_seq >= 0.2 and counter_seq < 0.7)
+        {
+            g=0;
+        }
+        if(counter_seq >= 0.7 and counter_seq < 0.8)
+        {
+            g=2;
+        }
+        if(counter_seq >= 0.8 and counter_seq < 1)
+        {
+            g=1;
+        }
+        if(counter_seq >= 1 and counter_seq < 1.1)
+        {
+            g=2;
+        }
         if(g == 0) // SM is off
         {
             shield.power.setDutyCycle(LEG1,0.0);
@@ -358,10 +367,11 @@ void loop_critical_task()
             }
             pwm_enable = false;
         }            
-
     
-        scope.acquire();
     }
+    g_float = (float)g;
+    scope.acquire();
+    counter_seq = counter_seq + control_task_period;
 
 }
 
