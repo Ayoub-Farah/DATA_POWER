@@ -95,7 +95,7 @@ static bool trigger = false;
 
 /* SM switching variables */
 
-static uint8_t g = 2;
+static uint8_t g = 0;
 static float32_t g_float;
 static float32_t counter_seq;
 static float32_t decalage_source = 5;
