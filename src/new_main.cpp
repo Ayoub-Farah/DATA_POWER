@@ -58,6 +58,8 @@ static float32_t theta_dbg = 0.0f;   // inverter angle
 static float32_t Valpha_dbg = 0.0f;  // inverter Vab.alpha
 static bool trigger = false;         // acquisition trigger
 static bool a_trigger() { return trigger; }
+// Flag to pause background prints during dump (see GFI example)
+static volatile bool dump_active = false;
 
 // Console dump helper (mirrors GFI behavior)
 static void dump_scope_datas(ScopeMimicry &scope_inst)
@@ -74,13 +76,26 @@ static void dump_scope_datas(ScopeMimicry &scope_inst)
 // Exposed to ThingSet callbacks
 void app_dump_scope(void)
 {
+    dump_active = true;   // prevent background prints while dumping
     dump_scope_datas(scope);
+    dump_active = false;
+}
+
+// Exposed trigger setter for ThingSet
+void app_set_scope_trigger(bool trig)
+{
+    trigger = trig;
 }
 #else
 // Stubs when scope is disabled
 void app_dump_scope(void)
 {
     printk("Scope disabled. Enable with -DENABLE_SCOPE_MIMICRY=1.\n");
+}
+void app_set_scope_trigger(bool trig)
+{
+    ARG_UNUSED(trig);
+    printk("Scope disabled; trigger ignored.\n");
 }
 #endif
 
@@ -184,7 +199,12 @@ void background_task()
     }
 
     // Print every ~1s to avoid flooding (given 100 ms period below)
-    if ((tick % 10u) == 0u) {
+    // Skip while dumping scope to avoid corrupting the recording
+    if ((tick % 10u) == 0u
+#if ENABLE_SCOPE_MIMICRY
+        && !dump_active
+#endif
+        ) {
         printk("APP m=%u ac=%u\n", (unsigned)mode, (unsigned)func_ac_mode);
 #if ENABLE_VERBOSE_PRINTS
         // Optional diagnostics (disabled by default to save flash)
@@ -249,7 +269,7 @@ void critical_task()
             startup_duty = clampf(startup_duty, 0.0f, STARTUP_TARGET);
 #if ENABLE_SCOPE_MIMICRY
             // arm scope trigger at start of ramp
-            trigger = true;
+            // trigger = true;
 #endif
         }
         prev_mode = mode;
@@ -308,6 +328,7 @@ void critical_task()
     // Compute duty from inverter (normal POWER mode)
     float32_t v_meas = V1_low_value;
     float32_t i_meas = I1_low_value;
+    // Vdq and omega references are applied from ThingSet callback
     float32_t duty = inverter.calculateDuty(v_meas, i_meas);
     // duty = clampf(duty, 0.1f, 0.9f);
     shield.power.setDutyCycle(ALL, duty);
@@ -369,6 +390,21 @@ void app_apply_ac_mode(uint8_t new_ac_mode)
             pwm_enable = false;
         }
     }
+}
+
+// Apply Vdq and omega references (from ThingSet callback)
+void app_apply_ctrl_refs(float32_t vd, float32_t vq, float32_t omega)
+{
+#if ENABLE_SCOPE_MIMICRY
+    // Clear the one-shot trigger if it was set previously; not related to refs
+    trigger = false;
+#endif
+    dqo_t Vdq_ref;
+    Vdq_ref.d = vd;
+    Vdq_ref.q = vq;
+    Vdq_ref.o = 0.0f;
+    inverter.setVdqRef(Vdq_ref);
+    inverter.setWRef(omega);
 }
 
 #endif // USE_NEW_MAIN

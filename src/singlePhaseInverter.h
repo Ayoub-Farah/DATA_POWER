@@ -81,6 +81,9 @@ public:
     // Change operating mode at runtime, keeping stored parameters
     void setMode(inverter_mode mode);
 
+    // Set angular frequency reference (rad/s)
+    void setWRef(float32_t w_ref);
+
 
 private:
     // Internal state variables

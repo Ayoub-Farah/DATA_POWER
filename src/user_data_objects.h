@@ -52,6 +52,11 @@ float32_t duty_cycle = 0.3;
 float32_t voltage_reference = 15;
 float32_t voltage_setpoint = 15;
 
+// Control references for AC inverter (grid-forming)
+float32_t ctrl_vd_ref = 0.0f;   // D-axis voltage reference [V]
+float32_t ctrl_vq_ref = 0.0f;   // Q-axis voltage reference [V]
+float32_t ctrl_omega_ref = 314.159265f; // Angular frequency reference [rad/s] (default 50 Hz)
+
 // Mode handling
 typedef struct {
     const char *name;
@@ -257,6 +262,12 @@ static float32_t comm_analog_rValue  = 0.0f;
 #define ID_CONF_AC_WMODE       0x461
 #define ID_CONF_AC_WPARAM      0x462
 
+// Control subgroup for inverter references
+#define ID_CONF_CTRL           0x47
+#define ID_CONF_CTRL_WVD       0x4701
+#define ID_CONF_CTRL_WVQ       0x4702
+#define ID_CONF_CTRL_WOMEGA    0x4703
+
 /* Measurements → individual items */
 #define ID_MEAS_VAL_V1_LOW      0x512
 #define ID_MEAS_VAL_V2_LOW      0x513
@@ -302,6 +313,8 @@ THINGSET_ADD_GROUP(TS_ID_ROOT, ID_CONF,"Config", THINGSET_NO_CALLBACK);
 
 // Backing storage for a write-only dump trigger
 bool dbg_scope_dump = false;
+// Backing storage for a manual acquisition trigger (ThingSet-controlled)
+bool dbg_scope_trig = false;
 
 // Callback to react on writes
 void conf_scope_cb(enum thingset_callback_reason reason);
@@ -310,6 +323,7 @@ void conf_scope_cb(enum thingset_callback_reason reason);
 THINGSET_ADD_GROUP(TS_ID_ROOT, ID_DBG, "Debug", THINGSET_NO_CALLBACK);
 THINGSET_ADD_GROUP(ID_DBG, ID_DBG_SCOPE, "Scope", &conf_scope_cb);
 THINGSET_ADD_ITEM_BOOL(ID_DBG_SCOPE, 0x6011, "wDump", &dbg_scope_dump, THINGSET_ANY_RW, NO_SUBSET);
+THINGSET_ADD_ITEM_BOOL(ID_DBG_SCOPE, 0x6012, "wTrig", &dbg_scope_trig, THINGSET_ANY_RW, NO_SUBSET);
 
 /* =========================================================================
  * Function (unified, high-level feature flags)
@@ -323,6 +337,16 @@ THINGSET_ADD_ITEM_UINT8(ID_CONF_FUNC, ID_CONF_FUNC_WDOMAIN, "wDomain", &func_dom
 THINGSET_ADD_ITEM_BOOL (ID_CONF_FUNC, ID_CONF_FUNC_WDC_VSCS, "wDC_VSCS_Enable", &func_dc_vscs_enable, THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_BOOL (ID_CONF_FUNC, ID_CONF_FUNC_WDC_DROOP, "wDC_Droop_Enable", &func_dc_droop_enable, THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_UINT8(ID_CONF_FUNC, ID_CONF_FUNC_WAC_MODE, "wAC_Mode", &func_ac_mode, THINGSET_ANY_RW, NO_SUBSET);
+
+/* =========================================================================
+ * Control (Vdq and frequency references)
+ * ========================================================================= */
+// Forward declare callback
+void conf_ctrl_cb(enum thingset_callback_reason reason);
+THINGSET_ADD_GROUP(ID_CONF, ID_CONF_CTRL, "Ctrl", &conf_ctrl_cb);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_CTRL, ID_CONF_CTRL_WVD,    "wVd_V",    &ctrl_vd_ref,    3, THINGSET_ANY_RW, NO_SUBSET);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_CTRL, ID_CONF_CTRL_WVQ,    "wVq_V",    &ctrl_vq_ref,    3, THINGSET_ANY_RW, NO_SUBSET);
+THINGSET_ADD_ITEM_FLOAT(ID_CONF_CTRL, ID_CONF_CTRL_WOMEGA, "wOmega_rps", &ctrl_omega_ref, 3, THINGSET_ANY_RW, NO_SUBSET);
 
 /* =========================================================================
  * Power → Leg 1

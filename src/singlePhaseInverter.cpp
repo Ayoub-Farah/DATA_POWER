@@ -264,3 +264,6 @@ void singlePhaseInverter::setMode(inverter_mode mode){
     init(mode, _V_bus, _grid_Vpk, _w_ref, _Ts);
 }
 
+void singlePhaseInverter::setWRef(float32_t w_ref){
+    _w_ref = w_ref;
+}

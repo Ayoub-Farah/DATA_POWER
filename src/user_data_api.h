@@ -44,6 +44,12 @@ extern float32_t meas_data;
 
 // Debug scope dump trigger storage
 extern bool dbg_scope_dump;
+extern bool dbg_scope_trig;
+
+// Inverter control references (ThingSet-controlled)
+extern float32_t ctrl_vd_ref;
+extern float32_t ctrl_vq_ref;
+extern float32_t ctrl_omega_ref;
 
 typedef struct {
     const char *name;
@@ -102,5 +108,9 @@ extern uint8_t func_ac_mode;
 void app_apply_ac_mode(uint8_t new_ac_mode);
 // Debug hook used by ThingSet to dump ScopeMimicry data
 void app_dump_scope(void);
+// Set ScopeMimicry manual trigger (ThingSet writes)
+void app_set_scope_trigger(bool trig);
+// Apply Vdq and omega references from ThingSet
+void app_apply_ctrl_refs(float32_t vd, float32_t vq, float32_t omega);
 
 #endif // USER_DATA_API_H

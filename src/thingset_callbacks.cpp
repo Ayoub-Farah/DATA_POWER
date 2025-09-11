@@ -195,6 +195,25 @@ void conf_scope_cb(enum thingset_callback_reason reason)
                 app_dump_scope();
                 dbg_scope_dump = false; // auto-reset after dump
             }
+            // Manual acquisition trigger: fire immediately on write and auto-reset
+            if (dbg_scope_trig) {
+                app_set_scope_trigger(true);
+                // optional: leave app trigger high; make control one-shot at ThingSet level
+                dbg_scope_trig = false;
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+/* ===== Control (Vdq + omega) callback ===== */
+void conf_ctrl_cb(enum thingset_callback_reason reason)
+{
+    switch (reason) {
+        case THINGSET_CALLBACK_POST_WRITE:
+            // Apply newly written references to the inverter
+            app_apply_ctrl_refs(ctrl_vd_ref, ctrl_vq_ref, ctrl_omega_ref);
             break;
         default:
             break;
