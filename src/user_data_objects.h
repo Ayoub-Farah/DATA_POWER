@@ -293,6 +293,25 @@ static float32_t comm_analog_rValue  = 0.0f;
 THINGSET_ADD_GROUP(TS_ID_ROOT, ID_CONF,"Config", THINGSET_NO_CALLBACK);
 
 /* =========================================================================
+ * Debug (scope trigger)
+ * ========================================================================= */
+
+// IDs for Debug group and Scope subgroup
+#define ID_DBG                  0x60
+#define ID_DBG_SCOPE            0x601
+
+// Backing storage for a write-only dump trigger
+bool dbg_scope_dump = false;
+
+// Callback to react on writes
+void conf_scope_cb(enum thingset_callback_reason reason);
+
+// Register groups and item
+THINGSET_ADD_GROUP(TS_ID_ROOT, ID_DBG, "Debug", THINGSET_NO_CALLBACK);
+THINGSET_ADD_GROUP(ID_DBG, ID_DBG_SCOPE, "Scope", &conf_scope_cb);
+THINGSET_ADD_ITEM_BOOL(ID_DBG_SCOPE, 0x6011, "wDump", &dbg_scope_dump, THINGSET_ANY_RW, NO_SUBSET);
+
+/* =========================================================================
  * Function (unified, high-level feature flags)
  * ========================================================================= */
 

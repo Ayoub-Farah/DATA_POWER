@@ -18,6 +18,13 @@
 #include "trigo.h"
 
 #include "user_data_api.h"
+// Debug capture (ScopeMimicry) is optional; set ENABLE_SCOPE_MIMICRY=1 to enable
+#ifndef ENABLE_SCOPE_MIMICRY
+#define ENABLE_SCOPE_MIMICRY 0
+#endif
+#if ENABLE_SCOPE_MIMICRY
+#include "ScopeMimicry.h"
+#endif
 
 // Runtime app mode (used by ThingSet callbacks)
 uint8_t mode = MODE_IDL;
@@ -38,12 +45,57 @@ static singlePhaseInverter inverter;
 // PWM enable state
 static bool pwm_enable = false;
 
+#if ENABLE_SCOPE_MIMICRY
+// ---- ScopeMimicry debug wiring ----
+#ifndef SCOPE_MEM
+#define SCOPE_MEM 1024
+#endif
+#define SCOPE_LENGTH 5
+static ScopeMimicry scope(SCOPE_MEM, SCOPE_LENGTH);
+// Channels to export
+static float32_t omega_dbg = 0.0f;   // inverter angular frequency
+static float32_t theta_dbg = 0.0f;   // inverter angle
+static float32_t Valpha_dbg = 0.0f;  // inverter Vab.alpha
+static bool trigger = false;         // acquisition trigger
+static bool a_trigger() { return trigger; }
+
+// Console dump helper (mirrors GFI behavior)
+static void dump_scope_datas(ScopeMimicry &scope_inst)
+{
+    scope_inst.reset_dump();
+    printk("begin record\n");
+    while (scope_inst.get_dump_state() != finished) {
+        printk("%s", scope_inst.dump_datas());
+        task.suspendBackgroundUs(100);
+    }
+    printk("end record\n");
+}
+
+// Exposed to ThingSet callbacks
+void app_dump_scope(void)
+{
+    dump_scope_datas(scope);
+}
+#else
+// Stubs when scope is disabled
+void app_dump_scope(void)
+{
+    printk("Scope disabled. Enable with -DENABLE_SCOPE_MIMICRY=1.\n");
+}
+#endif
+
 // Simple clamps
 static inline float32_t clampf(float32_t v, float32_t lo, float32_t hi)
 {
     if (v < lo) return lo;
     if (v > hi) return hi;
     return v;
+}
+
+// Simple sign helper
+static inline float32_t signf(float32_t x)
+{
+    return (x > 0.0f) - (x < 0.0f);
 }
 
 void critical_task(void);
@@ -54,7 +106,8 @@ void app_apply_ac_mode(uint8_t new_ac_mode);
 static void setup_routine()
 {
     // Initialize power stage (Buck on all legs, update as needed for your hardware)
-    shield.power.initBuck(ALL);
+    shield.power.initBuck(LEG1);
+    shield.power.initBoost(LEG2);
 
     // Sensors
     shield.sensors.enableDefaultTwistSensors();
@@ -70,13 +123,25 @@ static void setup_routine()
     // Initialize single phase inverter according to configured AC mode
     // V_bus initial guess 60 V; will be updated from measurement each cycle
     // grid_Vpk 10 V, grid_w0 for 50 Hz
-    const float32_t Vbus_init = 60.0F;
-    const float32_t grid_Vpk  = 10.0F;
+    const float32_t Vbus_init = 20.0F;
+    const float32_t grid_Vpk  = 6.0F;
     const float32_t grid_w0   = 2.0F * PI * 50.0F;
     inverter.init((func_ac_mode == FUNC_AC_GF) ? FORMING : FOLLOWING,
                   Vbus_init, grid_Vpk, grid_w0, Ts);
     // Apply initial mode gating/sync behavior
     app_apply_ac_mode(func_ac_mode);
+
+    // ScopeMimicry channels (only requested signals)
+#if ENABLE_SCOPE_MIMICRY
+    scope.connectChannel(V1_low_value, "V1Low");
+    scope.connectChannel(V2_low_value, "V2Low");
+    scope.connectChannel(omega_dbg,     "omega");
+    scope.connectChannel(theta_dbg,     "theta");
+    scope.connectChannel(Valpha_dbg,    "Valpha");
+    scope.set_delay(0.2f);
+    scope.set_trigger(a_trigger);
+    scope.start();
+#endif
 
     // Create tasks
     uint32_t app_task_number = task.createBackground(background_task);
@@ -141,6 +206,15 @@ void background_task()
 
 void critical_task()
 {
+    // --- Handle IDLE -> POWER startup ramp to 50% duty ---
+    // Internal transient sub-state used only during the transition
+    static uint8_t prev_mode = MODE_IDL;
+    static bool startup_active = false;
+    static float32_t startup_duty = 0.0f;
+    // Ramp parameters inspired by GFI example
+    static constexpr float32_t STARTUP_TARGET = 0.5f;
+    static constexpr float32_t STARTUP_RATE   = 50.0f; // duty per second
+
     // Acquire latest measurements
     float32_t val;
 
@@ -167,11 +241,27 @@ void critical_task()
         inverter.setVBus(V_high_value);
     }
 
+    // Detect transitions into POWER: arm startup sequence
+    if (mode != prev_mode) {
+        if (prev_mode == MODE_IDL && mode == MODE_PWR) {
+            startup_active = true;
+            // Keep current value if already near target, else start from current HW/global estimate
+            startup_duty = clampf(startup_duty, 0.0f, STARTUP_TARGET);
+#if ENABLE_SCOPE_MIMICRY
+            // arm scope trigger at start of ramp
+            trigger = true;
+#endif
+        }
+        prev_mode = mode;
+    }
+
     if (mode == MODE_IDL) {
         if (pwm_enable) {
             shield.power.stop(ALL);
             pwm_enable = false;
         }
+        // Reset startup state while idling
+        startup_active = false;
         return;
 
     }
@@ -187,12 +277,48 @@ void critical_task()
         return;
     }
 
-    // Compute duty from inverter
+    // STARTUP: ramp duty to 50% before enabling closed-loop power
+    if (startup_active) {
+        // Advance ramp: x += Ts * rate * sign(target - x)
+        startup_duty += Ts * STARTUP_RATE * signf(STARTUP_TARGET - startup_duty);
+        startup_duty = clampf(startup_duty, 0.0f, STARTUP_TARGET);
+
+        // Apply ramp duty and ensure PWM is running during startup
+        shield.power.setDutyCycle(ALL, startup_duty);
+        inverter.setPowerOn(false); // keep controller gated during ramp
+        if (!pwm_enable) {
+            pwm_enable = true;
+            shield.power.start(ALL);
+        }
+
+        // Leave startup once we are effectively at target
+        if (startup_duty >= (STARTUP_TARGET - 0.01f)) {
+            startup_active = false;
+        }
+        // Update debug and capture during ramp
+#if ENABLE_SCOPE_MIMICRY
+        omega_dbg  = inverter.getw();
+        theta_dbg  = inverter.getTheta();
+        Valpha_dbg = inverter.getVab().alpha;
+        scope.acquire();
+#endif
+        return; // skip normal control while ramping
+    }
+
+    // Compute duty from inverter (normal POWER mode)
     float32_t v_meas = V1_low_value;
     float32_t i_meas = I1_low_value;
     float32_t duty = inverter.calculateDuty(v_meas, i_meas);
-    duty = clampf(duty, 0.0f, 0.95f);
+    // duty = clampf(duty, 0.1f, 0.9f);
     shield.power.setDutyCycle(ALL, duty);
+
+    // ---- Update debug values and capture ----
+#if ENABLE_SCOPE_MIMICRY
+    omega_dbg  = inverter.getw();
+    theta_dbg  = inverter.getTheta();
+    Valpha_dbg = inverter.getVab().alpha;
+    scope.acquire();
+#endif
 
     // Gating rules
     if (func_ac_mode == FUNC_AC_GF) {

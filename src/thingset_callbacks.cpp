@@ -183,3 +183,20 @@ void meas_cb_5(enum thingset_callback_reason reason) { meas_cb_idx(reason, 5); }
 void meas_cb_6(enum thingset_callback_reason reason) { meas_cb_idx(reason, 6); }
 void meas_cb_7(enum thingset_callback_reason reason) { meas_cb_idx(reason, 7); }
 #endif
+
+// /* ===== Debug/Scope callback ===== */
+// extern "C" void app_dump_scope(void);
+
+void conf_scope_cb(enum thingset_callback_reason reason)
+{
+    switch (reason) {
+        case THINGSET_CALLBACK_POST_WRITE:
+            if (dbg_scope_dump) {
+                app_dump_scope();
+                dbg_scope_dump = false; // auto-reset after dump
+            }
+            break;
+        default:
+            break;
+    }
+}

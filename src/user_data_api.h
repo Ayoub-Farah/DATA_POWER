@@ -42,6 +42,9 @@ extern float32_t voltage_reference;
 extern float32_t voltage_setpoint;
 extern float32_t meas_data;
 
+// Debug scope dump trigger storage
+extern bool dbg_scope_dump;
+
 typedef struct {
     const char *name;
     float32_t *address;
@@ -97,5 +100,7 @@ extern uint8_t func_ac_mode;
 
 /* Application hooks used by ThingSet callbacks */
 void app_apply_ac_mode(uint8_t new_ac_mode);
+// Debug hook used by ThingSet to dump ScopeMimicry data
+void app_dump_scope(void);
 
 #endif // USER_DATA_API_H
