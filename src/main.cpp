@@ -101,7 +101,7 @@ static uint8_t g = 2;
 static float32_t g_float;
 static float seq_timer = 0;
 static uint32_t critical_task_timer = 0;
-static const float32_t decalage_source = 0;
+static const float32_t decalage_source = 1;
 static bool Vsource_turnoff_indicator = false;
 static bool Vsource_ON_once_indicator = false;
 /*--------------------------------------------------------------- */
@@ -280,10 +280,10 @@ void loop_critical_task()
     
     meas_data = shield.sensors.getLatestValue(I1_LOW);
     if (meas_data != NO_VALUE) I1_low_value = meas_data;
-    /*
+    
     meas_data = shield.sensors.getLatestValue(V1_LOW);
     if (meas_data != NO_VALUE) V1_low_value = meas_data;
-    */
+    
     meas_data = shield.sensors.getLatestValue(V2_LOW);
     if (meas_data != NO_VALUE) V2_low_value = meas_data;
 
@@ -364,6 +364,7 @@ void loop_critical_task()
             mode = IDLEMODE;
         }
         g_float = (float)g;
+        
         /* Scope data acquisition */
         if (scope_timer == scope_period)
         {
