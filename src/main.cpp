@@ -38,8 +38,8 @@
 /*--------------OWNTECH Libraries----------------------------- */
 #include "pid.h"
 
-#ifdef USE_NEW_MAIN
-// When using the fused new_main, skip the legacy implementation in this file.
+#if defined(USE_NEW_MAIN) || defined(USE_DC_MAIN)
+// When using alternative mains, skip the legacy implementation in this file.
 #else
 
 /*--------------SETUP FUNCTIONS DECLARATION------------------- */

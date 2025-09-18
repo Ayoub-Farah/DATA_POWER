@@ -2,6 +2,7 @@
 
 #include <zephyr/sys/printk.h>
 #include <thingset.h>
+#include <string.h>
 
 #include "SpinAPI.h"
 #include "ShieldAPI.h"
@@ -56,6 +57,7 @@ static void conf_set_leg_idx(enum thingset_callback_reason reason, uint8_t i)
             break;
 
         case THINGSET_CALLBACK_POST_WRITE:
+            // Resolve tracking variable by index change
             if (power_legs[i].wCapa != leg_prev[i].capa) {
                 if (power_legs[i].wCapa)
                     shield.power.connectCapacitor((leg_t)i);
@@ -84,6 +86,26 @@ static void conf_set_leg_idx(enum thingset_callback_reason reason, uint8_t i)
                     power_legs[i].tracking_name = system_sensors[(int)power_legs[i].wVar].name;
                 }
             }
+            // Resolve tracking variable by name, if provided via /Config/Leg/i/wVarName
+            if (leg_var_name[i][0] != '\0') {
+                int match = -1;
+                for (int idx = 0; idx < NUM_OF_MEAS; idx++) {
+                    if (strcmp(leg_var_name[i], system_sensors[idx].name) == 0) {
+                        match = idx;
+                        break;
+                    }
+                }
+                if (match >= 0) {
+                    power_legs[i].wVar = (int8_t)match;
+                    power_legs[i].tracking_var  = system_sensors[match].address;
+                    power_legs[i].tracking_name = system_sensors[match].name;
+                    printk("Leg %u tracking set to '%s' (idx %d)\n", (unsigned)i, system_sensors[match].name, match);
+                } else {
+                    printk("Leg %u: unknown tracking var name '%s'\n", (unsigned)i, leg_var_name[i]);
+                }
+                // Clear buffer after processing to make changes edge-triggered
+                leg_var_name[i][0] = '\0';
+            }
             break;
         default:
             break;
@@ -97,8 +119,6 @@ void conf_leg_cb_2(enum thingset_callback_reason reason) { conf_set_leg_idx(reas
 /* ===== Function (unified) callback ===== */
 typedef struct {
     uint8_t domain;
-    bool    dc_vscs;
-    bool    dc_droop;
     uint8_t ac_mode;
 } func_shadow_t;
 
@@ -109,8 +129,6 @@ void conf_func_cb(enum thingset_callback_reason reason)
     switch (reason) {
         case THINGSET_CALLBACK_PRE_WRITE:
             func_prev.domain  = func_domain;
-            func_prev.dc_vscs = func_dc_vscs_enable;
-            func_prev.dc_droop= func_dc_droop_enable;
             func_prev.ac_mode = func_ac_mode;
             break;
 
@@ -131,13 +149,6 @@ void conf_func_cb(enum thingset_callback_reason reason)
                 }
                 printk("Function domain changed: %u -> %u\n",
                        (unsigned)func_prev.domain, (unsigned)func_domain);
-            }
-
-            if (func_dc_vscs_enable != func_prev.dc_vscs) {
-                printk("DC VS/CS feature: %s\n", func_dc_vscs_enable ? "EN" : "DIS");
-            }
-            if (func_dc_droop_enable != func_prev.dc_droop) {
-                printk("DC Droop feature: %s\n", func_dc_droop_enable ? "EN" : "DIS");
             }
 
             if (func_ac_mode != func_prev.ac_mode) {
@@ -219,3 +230,8 @@ void conf_ctrl_cb(enum thingset_callback_reason reason)
             break;
     }
 }
+
+/* DC control removed */
+
+
+/* DC per-leg callbacks removed */

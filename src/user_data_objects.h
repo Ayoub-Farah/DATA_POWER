@@ -126,8 +126,6 @@ typedef enum {
 
 // Backing storage for minimal function set
 uint8_t    func_domain = FUNC_DOMAIN_DC; // DC by default
-bool       func_dc_vscs_enable = false;
-bool       func_dc_droop_enable = false;
 uint8_t    func_ac_mode = FUNC_AC_GF;
 
 
@@ -144,6 +142,7 @@ typedef struct {
     /* Selection + reference */
     int8_t  wVar;            /* index into tracking_vars[] (0..TRACKING_VARS_COUNT-1) */
     float32_t   wRef;            /* setpoint for selected variable (REFERENCE) */
+    uint8_t wModeVC;         /* 0=Voltage, 1=Current */
     float32_t *tracking_var;  // pointer to the live measurement
     const char *tracking_name;      // optional, for debug prints
 
@@ -163,19 +162,22 @@ typedef struct {
 } power_leg_t;
 
 power_leg_t power_legs[POWER_NUM_LEGS] = {
-    { .wLegON=false, .wCapa=false, .wDriver=false, .wBuck=false, 
+    { .wModeVC=0, .wLegON=false, .wCapa=false, .wDriver=false, .wBuck=false, 
       .wDuty=0.0f, .wPhase_deg=0.0f, .wDead_rise_ns=0, .wDead_fall_ns=0, 
       .wFreq_Hz=0.0f },
-    { .wLegON=false, .wCapa=false, .wDriver=false, .wBuck=false, 
+    { .wModeVC=0, .wLegON=false, .wCapa=false, .wDriver=false, .wBuck=false, 
       .wDuty=0.0f, .wPhase_deg=0.0f, .wDead_rise_ns=0, .wDead_fall_ns=0, 
       .wFreq_Hz=0.0f },
 #ifdef CONFIG_SHIELD_OWNVERTER
-    { .wVar = 6, .wRef = 0.0f, .tracking_var=NULL, .tracking_name=NULL,
+    { .wVar = 6, .wRef = 0.0f, .wModeVC=0, .tracking_var=NULL, .tracking_name=NULL,
       .wLegON=false, .wCapa=false, .wDriver=false, .wBuck=false,
       .wDuty=0.0f, .wPhase_deg=0.0f, .wDead_rise_ns=0, .wDead_fall_ns=0, .wFreq_Hz=0.0f },
 #endif
 
 };
+
+// Writable per-leg variable name buffer to select tracking variable by name
+char leg_var_name[POWER_NUM_LEGS][16] = { {0} };
 
 
 typedef enum {
@@ -262,6 +264,8 @@ static float32_t comm_analog_rValue  = 0.0f;
 #define ID_CONF_AC_WMODE       0x461
 #define ID_CONF_AC_WPARAM      0x462
 
+/* DC control removed */
+
 // Control subgroup for inverter references
 #define ID_CONF_CTRL           0x47
 #define ID_CONF_CTRL_WVD       0x4701
@@ -334,8 +338,6 @@ THINGSET_ADD_GROUP(ID_CONF, ID_CONF_FUNC, "Function", &conf_func_cb);
 
 // Minimal initial set of parameters
 THINGSET_ADD_ITEM_UINT8(ID_CONF_FUNC, ID_CONF_FUNC_WDOMAIN, "wDomain", &func_domain, THINGSET_ANY_RW, NO_SUBSET);
-THINGSET_ADD_ITEM_BOOL (ID_CONF_FUNC, ID_CONF_FUNC_WDC_VSCS, "wDC_VSCS_Enable", &func_dc_vscs_enable, THINGSET_ANY_RW, NO_SUBSET);
-THINGSET_ADD_ITEM_BOOL (ID_CONF_FUNC, ID_CONF_FUNC_WDC_DROOP, "wDC_Droop_Enable", &func_dc_droop_enable, THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_UINT8(ID_CONF_FUNC, ID_CONF_FUNC_WAC_MODE, "wAC_Mode", &func_ac_mode, THINGSET_ANY_RW, NO_SUBSET);
 
 /* =========================================================================
@@ -347,6 +349,8 @@ THINGSET_ADD_GROUP(ID_CONF, ID_CONF_CTRL, "Ctrl", &conf_ctrl_cb);
 THINGSET_ADD_ITEM_FLOAT(ID_CONF_CTRL, ID_CONF_CTRL_WVD,    "wVd_V",    &ctrl_vd_ref,    3, THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_FLOAT(ID_CONF_CTRL, ID_CONF_CTRL_WVQ,    "wVq_V",    &ctrl_vq_ref,    3, THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_FLOAT(ID_CONF_CTRL, ID_CONF_CTRL_WOMEGA, "wOmega_rps", &ctrl_omega_ref, 3, THINGSET_ANY_RW, NO_SUBSET);
+
+/* DC Control removed */
 
 /* =========================================================================
  * Power → Leg 1
@@ -382,6 +386,7 @@ void conf_leg_cb_2(enum thingset_callback_reason reason);
 #if (POWER_NUM_LEGS > 0)
 THINGSET_ADD_GROUP(ID_CONF_LEG, ID_CONF_LEG_0, "0", &conf_leg_cb_0);
 THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_0, 0x4801, "wOn",     &power_legs[0].wLegON,        THINGSET_ANY_RW, NO_SUBSET);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_0, 0x4800, "wModeVC", &power_legs[0].wModeVC,      THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_0, 0x4802, "wCapa",   &power_legs[0].wCapa,         THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_0, 0x4803, "wDriver", &power_legs[0].wDriver,       THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_0, 0x4804, "wBuck",   &power_legs[0].wBuck,         THINGSET_ANY_RW, NO_SUBSET);
@@ -392,6 +397,7 @@ THINGSET_ADD_ITEM_UINT16(ID_CONF_LEG_0,0x4808,"wDTFall_ns", &power_legs[0].wDead
 THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_0,0x4809, "wFreq_Hz", &power_legs[0].wFreq_Hz, 1,  THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_INT8(ID_CONF_LEG_0, 0x480A, "wVar",    &power_legs[0].wVar,          THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_0,0x480B, "wRef",    &power_legs[0].wRef,    3,    THINGSET_ANY_RW, NO_SUBSET);
+THINGSET_ADD_ITEM_STRING(ID_CONF_LEG_0, 0x480C, "wVarName", leg_var_name[0], sizeof(leg_var_name[0]), THINGSET_ANY_RW, NO_SUBSET);
 #endif
 
 // (Function subgroups replaced by minimal feature set at top of file)
@@ -399,6 +405,7 @@ THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_0,0x480B, "wRef",    &power_legs[0].wRef,   
 #if (POWER_NUM_LEGS > 1)
 THINGSET_ADD_GROUP(ID_CONF_LEG, ID_CONF_LEG_1, "1", &conf_leg_cb_1);
 THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_1, 0x4811, "wOn",     &power_legs[1].wLegON,        THINGSET_ANY_RW, NO_SUBSET);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_1, 0x4810, "wModeVC", &power_legs[1].wModeVC,      THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_1, 0x4812, "wCapa",   &power_legs[1].wCapa,         THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_1, 0x4813, "wDriver", &power_legs[1].wDriver,       THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_1, 0x4814, "wBuck",   &power_legs[1].wBuck,         THINGSET_ANY_RW, NO_SUBSET);
@@ -409,11 +416,13 @@ THINGSET_ADD_ITEM_UINT16(ID_CONF_LEG_1,0x4818,"wDTFall_ns", &power_legs[1].wDead
 THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_1,0x4819, "wFreq_Hz", &power_legs[1].wFreq_Hz, 1,  THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_INT8(ID_CONF_LEG_1, 0x481A, "wVar",    &power_legs[1].wVar,          THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_1,0x481B, "wRef",    &power_legs[1].wRef,    3,    THINGSET_ANY_RW, NO_SUBSET);
+THINGSET_ADD_ITEM_STRING(ID_CONF_LEG_1, 0x481C, "wVarName", leg_var_name[1], sizeof(leg_var_name[1]), THINGSET_ANY_RW, NO_SUBSET);
 #endif
 
 #if (POWER_NUM_LEGS > 2)
 THINGSET_ADD_GROUP(ID_CONF_LEG, ID_CONF_LEG_2, "2", &conf_leg_cb_2);
 THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_2, 0x4821, "wOn",     &power_legs[2].wLegON,        THINGSET_ANY_RW, NO_SUBSET);
+THINGSET_ADD_ITEM_UINT8(ID_CONF_LEG_2, 0x4820, "wModeVC", &power_legs[2].wModeVC,      THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_2, 0x4822, "wCapa",   &power_legs[2].wCapa,         THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_2, 0x4823, "wDriver", &power_legs[2].wDriver,       THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_BOOL(ID_CONF_LEG_2, 0x4824, "wBuck",   &power_legs[2].wBuck,         THINGSET_ANY_RW, NO_SUBSET);
@@ -424,6 +433,7 @@ THINGSET_ADD_ITEM_UINT16(ID_CONF_LEG_2,0x4828,"wDTFall_ns", &power_legs[2].wDead
 THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_2,0x4829, "wFreq_Hz", &power_legs[2].wFreq_Hz, 1,  THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_INT8(ID_CONF_LEG_2, 0x482A, "wVar",    &power_legs[2].wVar,          THINGSET_ANY_RW, NO_SUBSET);
 THINGSET_ADD_ITEM_FLOAT(ID_CONF_LEG_2,0x482B, "wRef",    &power_legs[2].wRef,    3,    THINGSET_ANY_RW, NO_SUBSET);
+THINGSET_ADD_ITEM_STRING(ID_CONF_LEG_2, 0x482C, "wVarName", leg_var_name[2], sizeof(leg_var_name[2]), THINGSET_ANY_RW, NO_SUBSET);
 #endif
 
 

@@ -72,6 +72,7 @@ extern SystemSensors system_sensors[];
 typedef struct {
     int8_t  wVar;
     float32_t   wRef;
+    uint8_t wModeVC; // 0=Voltage, 1=Current
     float32_t *tracking_var;
     const char *tracking_name;
     bool    wLegON;
@@ -87,6 +88,9 @@ typedef struct {
 
 extern power_leg_t power_legs[POWER_NUM_LEGS];
 
+// Writable per-leg string to select tracking variable by name (from system_sensors[].name)
+extern char leg_var_name[POWER_NUM_LEGS][16];
+
 enum { NUM_OF_MEAS = 
 #ifdef CONFIG_SHIELD_OWNVERTER
     8
@@ -100,9 +104,10 @@ typedef enum { FUNC_DOMAIN_DC = 0, FUNC_DOMAIN_AC = 1 } func_domain_t;
 typedef enum { FUNC_AC_GF = 0, FUNC_AC_GFL = 1 } func_ac_mode_t;
 
 extern uint8_t func_domain;
-extern bool    func_dc_vscs_enable;
-extern bool    func_dc_droop_enable;
 extern uint8_t func_ac_mode;
+
+// DC mode enum for leg selection
+enum { DC_MODE_VOLTAGE = 0, DC_MODE_CURRENT = 1 };
 
 /* Application hooks used by ThingSet callbacks */
 void app_apply_ac_mode(uint8_t new_ac_mode);
@@ -112,5 +117,7 @@ void app_dump_scope(void);
 void app_set_scope_trigger(bool trig);
 // Apply Vdq and omega references from ThingSet
 void app_apply_ctrl_refs(float32_t vd, float32_t vq, float32_t omega);
+
+// DC mode control removed
 
 #endif // USER_DATA_API_H
