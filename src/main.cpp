@@ -345,23 +345,15 @@ void loop_critical_task()
     {
         trigger = true;
         theta_before = theta;
-        theta = (ot_modulo_2pi(theta + w0 * Ts));
+        theta = (ot_modulo_2pi(theta + w0 * Ts));  
 
-        f0 += k_lin * Ts;
-
-        // if ((theta-theta_before)  < 0.0)
-        // {
-        //     f0 += 50;
-        //     if (f0>1500)
-        //     {
-        //         f0 = 50;
-        //     }
-        //     w0 = 2.0F * PI * f0;
-        // }        
+		/*  
+			The next line implements the chirp 
+			it should be commented for fixed frequency operation
+		*/
+        f0 += k_lin * Ts;  
 
         w0 = 2.0F * PI * f0;
-
-        // duty_cycle = pid.calculateWithReturn(voltage_reference, V1_low_value);
 
         duty_cycle = (ot_sin(theta)/2.5)+0.5;
         shield.power.setDutyCycle(LEG1,duty_cycle);
