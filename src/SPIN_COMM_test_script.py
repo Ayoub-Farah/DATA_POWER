@@ -79,6 +79,21 @@ reference_values = [1, 2, 3, 4, 5, 6]
 message1 = Shield.sendCommand("IDLE")
 print(message1)
 
+#---------------AUTOMATED EXCITATION EXAMPLES-------------------
+# Launches a chirp excitation (start frequency, end frequency, duration,
+# optional amplitude, optional offset, optional loop flag)
+message = Shield.sendCommand("TEST_CHIRP", "LEG2", 50.0, 5000.0, 2.0)
+print(message)
+
+# Launches a fixed frequency sinusoidal drive (frequency, optional amplitude,
+# optional offset)
+message = Shield.sendCommand("TEST_FIXED_FREQ", "LEG2", 500.0, 0.4, 0.5)
+print(message)
+
+# Stops any automated excitation currently running on LEG2
+message = Shield.sendCommand("TEST_WAVE_STOP", "LEG2")
+print(message)
+
 message1 = Shield.sendCommand("DRIVER",leg_to_test,"ON")
 print(message1)
 

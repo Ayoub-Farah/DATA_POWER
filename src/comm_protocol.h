@@ -163,6 +163,14 @@ typedef struct {
 } scopeToCommand_t;
 
 
+typedef enum {
+    TEST_PROFILE_NONE = 0,
+    TEST_PROFILE_SENSI,
+    TEST_PROFILE_CHIRP,
+    TEST_PROFILE_FIXED_FREQ,
+} test_profile_t;
+
+
 /**
  * @brief Structure representing various measurements and statuses.
  *
@@ -180,11 +188,24 @@ typedef struct {
 extern TrackingVariables tracking_vars[NUM_OF_TRACK_VARIABLES];
 extern PowerLegSettings power_leg_settings[NUM_OF_LEGS];
 extern cmdToSettings_t power_settings[7];
-extern testSensiSettings_t testSensi_settings[7];
+extern testSensiSettings_t testSensi_settings[4];
 extern cmdToState_t default_commands[3];
 extern scopeToCommand_t scope_commands[2];
 
 extern tester_states_t mode;
+extern test_profile_t current_test_profile;
+extern float32_t wave_frequency_hz;
+extern float32_t wave_amplitude;
+extern float32_t wave_offset;
+extern float32_t wave_theta;
+extern float32_t chirp_start_frequency;
+extern float32_t chirp_end_frequency;
+extern float32_t chirp_duration_s;
+extern float32_t chirp_elapsed_s;
+extern float32_t chirp_rate_hz_per_s;
+extern bool chirp_loop_enabled;
+extern bool waveform_stop_requested;
+extern bool enable_test_leg;
 extern uint8_t num_tracking_vars;
 extern uint8_t num_power_settings;
 extern uint8_t num_default_commands;

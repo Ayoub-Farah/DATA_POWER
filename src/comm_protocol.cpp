@@ -64,6 +64,19 @@ extern float32_t T3_value;
 
 
 extern float32_t duty_cycle;
+extern test_profile_t current_test_profile;
+extern float32_t wave_frequency_hz;
+extern float32_t wave_amplitude;
+extern float32_t wave_offset;
+extern float32_t wave_theta;
+extern float32_t chirp_start_frequency;
+extern float32_t chirp_end_frequency;
+extern float32_t chirp_duration_s;
+extern float32_t chirp_elapsed_s;
+extern float32_t chirp_rate_hz_per_s;
+extern bool chirp_loop_enabled;
+extern bool waveform_stop_requested;
+extern bool enable_test_leg;
 bool is_downloading;
 bool enable_acq;
 extern uint32_t num_trig_ratio_point;
@@ -106,8 +119,15 @@ cmdToSettings_t power_settings[] = {
     {"_d", dutyHandler},
 };
 
+void chirpHandler(uint8_t test_leg, uint8_t setting_position);
+void fixedFrequencyHandler(uint8_t test_leg, uint8_t setting_position);
+void waveStopHandler(uint8_t test_leg, uint8_t setting_position);
+
 testSensiSettings_t testSensi_settings[] = {
     {"_r", vrefHandler},
+    {"_c", chirpHandler},
+    {"_f", fixedFrequencyHandler},
+    {"_s", waveStopHandler},
 };
 
 cmdToState_t default_commands[] = {
@@ -331,15 +351,190 @@ void dutyHandler(uint8_t power_leg, uint8_t setting_position) {
 
 void vrefHandler(uint8_t power_leg, uint8_t setting_position) {
     // Check if the bufferstr starts with "_d_"
-    if (strncmp(bufferstr, "_LEG1_r_", 8) == 0 || 
-        strncmp(bufferstr, "_LEG2_r_", 8) == 0 || 
-        strncmp(bufferstr, "_LEG3_r_", 8) == 0) 
+    if (strncmp(bufferstr, "_LEG1_r_", 8) == 0 ||
+        strncmp(bufferstr, "_LEG2_r_", 8) == 0 ||
+        strncmp(bufferstr, "_LEG3_r_", 8) == 0)
     {
         // Extract the duty cycle value from the protocol message
         V_ref = atof(bufferstr + 8);
+        current_test_profile = TEST_PROFILE_SENSI;
+        is_test_performing = true;
+        dc_open_cycle = true;
+        waveform_stop_requested = false;
+        enable_test_leg = false;
+        chirp_elapsed_s = 0.0F;
+        wave_theta = 0.0F;
+        chirp_loop_enabled = false;
     } else {
         printk("Invalid protocol format: %s\n", bufferstr);
     }
+}
+
+static void clamp_waveform_bounds(float32_t *amplitude, float32_t *offset)
+{
+    if (*amplitude < 0.0F) {
+        *amplitude = 0.0F;
+    }
+    if (*amplitude > 0.5F) {
+        *amplitude = 0.5F;
+    }
+
+    if (*offset < *amplitude) {
+        *offset = *amplitude;
+    }
+    if (*offset > (1.0F - *amplitude)) {
+        *offset = 1.0F - *amplitude;
+    }
+    if (*offset < 0.0F) {
+        *offset = 0.0F;
+    }
+    if (*offset > 1.0F) {
+        *offset = 1.0F;
+    }
+}
+
+void chirpHandler(uint8_t test_leg_unused, uint8_t setting_position_unused)
+{
+    ARG_UNUSED(test_leg_unused);
+    ARG_UNUSED(setting_position_unused);
+
+    const char *payload = strstr(bufferstr, "_c_");
+    if (payload == NULL) {
+        printk("Invalid chirp command format: %s\n", bufferstr);
+        return;
+    }
+
+    float32_t start_freq = chirp_start_frequency;
+    float32_t end_freq = chirp_end_frequency;
+    float32_t sweep_duration = chirp_duration_s;
+    float32_t amplitude = wave_amplitude;
+    float32_t offset = wave_offset;
+    int loop = chirp_loop_enabled ? 1 : 0;
+
+    char temp_buffer[128];
+    strncpy(temp_buffer, payload + 3, sizeof(temp_buffer) - 1);
+    temp_buffer[sizeof(temp_buffer) - 1] = '\0';
+
+    char *token = strtok(temp_buffer, "_");
+    if (token != NULL) {
+        start_freq = atof(token);
+    }
+    token = strtok(NULL, "_");
+    if (token != NULL) {
+        end_freq = atof(token);
+    }
+    token = strtok(NULL, "_");
+    if (token != NULL) {
+        sweep_duration = atof(token);
+    }
+    token = strtok(NULL, "_");
+    if (token != NULL) {
+        amplitude = atof(token);
+    }
+    token = strtok(NULL, "_");
+    if (token != NULL) {
+        offset = atof(token);
+    }
+    token = strtok(NULL, "_");
+    if (token != NULL) {
+        loop = atoi(token);
+    }
+
+    if (sweep_duration <= 0.0F) {
+        printk("Invalid chirp duration %.3f\n", (double)sweep_duration);
+        return;
+    }
+
+    if (start_freq < 0.0F) {
+        start_freq = 0.0F;
+    }
+    if (end_freq < 0.0F) {
+        end_freq = 0.0F;
+    }
+
+    clamp_waveform_bounds(&amplitude, &offset);
+
+    chirp_start_frequency = start_freq;
+    chirp_end_frequency = end_freq;
+    chirp_duration_s = sweep_duration;
+    chirp_elapsed_s = 0.0F;
+    chirp_rate_hz_per_s = (chirp_duration_s > 0.0F) ?
+        (chirp_end_frequency - chirp_start_frequency) / chirp_duration_s : 0.0F;
+    wave_amplitude = amplitude;
+    wave_offset = offset;
+    wave_frequency_hz = chirp_start_frequency;
+    wave_theta = 0.0F;
+    chirp_loop_enabled = (loop != 0);
+    waveform_stop_requested = false;
+    enable_test_leg = false;
+
+    current_test_profile = TEST_PROFILE_CHIRP;
+    is_test_performing = true;
+    dc_open_cycle = false;
+}
+
+void fixedFrequencyHandler(uint8_t test_leg_unused, uint8_t setting_position_unused)
+{
+    ARG_UNUSED(test_leg_unused);
+    ARG_UNUSED(setting_position_unused);
+
+    const char *payload = strstr(bufferstr, "_f_");
+    if (payload == NULL) {
+        printk("Invalid fixed frequency command format: %s\n", bufferstr);
+        return;
+    }
+
+    float32_t frequency = wave_frequency_hz;
+    float32_t amplitude = wave_amplitude;
+    float32_t offset = wave_offset;
+
+    char temp_buffer[96];
+    strncpy(temp_buffer, payload + 3, sizeof(temp_buffer) - 1);
+    temp_buffer[sizeof(temp_buffer) - 1] = '\0';
+
+    char *token = strtok(temp_buffer, "_");
+    if (token != NULL) {
+        frequency = atof(token);
+    }
+    token = strtok(NULL, "_");
+    if (token != NULL) {
+        amplitude = atof(token);
+    }
+    token = strtok(NULL, "_");
+    if (token != NULL) {
+        offset = atof(token);
+    }
+
+    if (frequency <= 0.0F) {
+        printk("Invalid fixed frequency %.3f\n", (double)frequency);
+        return;
+    }
+
+    clamp_waveform_bounds(&amplitude, &offset);
+
+    wave_frequency_hz = frequency;
+    wave_amplitude = amplitude;
+    wave_offset = offset;
+    chirp_start_frequency = wave_frequency_hz;
+    chirp_end_frequency = wave_frequency_hz;
+    chirp_duration_s = 0.0F;
+    chirp_rate_hz_per_s = 0.0F;
+    chirp_elapsed_s = 0.0F;
+    wave_theta = 0.0F;
+    chirp_loop_enabled = true;
+    waveform_stop_requested = false;
+    enable_test_leg = false;
+
+    current_test_profile = TEST_PROFILE_FIXED_FREQ;
+    is_test_performing = true;
+    dc_open_cycle = false;
+}
+
+void waveStopHandler(uint8_t test_leg_unused, uint8_t setting_position_unused)
+{
+    ARG_UNUSED(test_leg_unused);
+    ARG_UNUSED(setting_position_unused);
+    waveform_stop_requested = true;
 }
 
 void referenceHandler(uint8_t power_leg, uint8_t setting_position){
@@ -530,8 +725,6 @@ void testSensiHandler()
             if (testSensi_settings[i].func != NULL)
             {
                 testSensi_settings[i].func(test_leg, i); //pointer to the handler function associated with the command
-                is_test_performing = true;
-                dc_open_cycle = true;
             }
             return;
         }

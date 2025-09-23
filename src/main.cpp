@@ -38,6 +38,7 @@
 #include "arm_math_types.h"
 #include <ScopeMimicry.h>
 #include "CommunicationAPI.h"
+#include "trigo.h"
 
 #define RECORD_SIZE 128 // Number of point to record
 
@@ -49,6 +50,11 @@ void setup_routine(); // Setups the hardware and software of the system
 void loop_application_task();   // Code to be executed in the background task
 void loop_communication_task();   // Code to be executed in the background task
 void loop_control_task();     // Code to be executed in real time in the critical task
+static void run_sensitivity_sequence(void);
+static void run_chirp_sequence(void);
+static void run_fixed_frequency_sequence(void);
+static void stop_all_tests(bool request_dump);
+static float32_t clamp_duty_cycle(float32_t value);
 
 
 //--------------USER VARIABLES DECLARATIONS----------------------
@@ -131,7 +137,19 @@ static uint32_t print_counter = 0;
 
 static float32_t local_analog_value=0;
 
-static bool enable_test_leg = false;
+bool enable_test_leg = false;
+test_profile_t current_test_profile = TEST_PROFILE_NONE;
+bool waveform_stop_requested = false;
+float32_t wave_theta = 0.0F;
+float32_t wave_frequency_hz = 50.0F;
+float32_t wave_amplitude = 0.4F;
+float32_t wave_offset = 0.5F;
+float32_t chirp_start_frequency = 50.0F;
+float32_t chirp_end_frequency = 5000.0F;
+float32_t chirp_duration_s = 1.0F;
+float32_t chirp_elapsed_s = 0.0F;
+float32_t chirp_rate_hz_per_s = 0.0F;
+bool chirp_loop_enabled = false;
 float32_t duty_cycle = lower_bound;
 float32_t duty_cycle_50_perc = 0.5;
 float32_t duty_cycle_70_perc = 0.7;
@@ -305,6 +323,204 @@ void loop_application_task()
 }
 
 
+static float32_t clamp_duty_cycle(float32_t value)
+{
+    if (value < 0.0F) {
+        return 0.0F;
+    }
+    if (value > 1.0F) {
+        return 1.0F;
+    }
+    return value;
+}
+
+static void stop_all_tests(bool request_dump)
+{
+    if (request_dump) {
+        is_downloading = true;
+    }
+
+    waveform_stop_requested = false;
+    is_test_performing = false;
+    current_test_profile = TEST_PROFILE_NONE;
+    dc_open_cycle = false;
+    enable_test_leg = false;
+    chirp_elapsed_s = 0.0F;
+    chirp_loop_enabled = false;
+    wave_theta = 0.0F;
+    trig_ratio = begin_trig_ratio;
+    cpt = 1;
+    duty_cycle = starting_duty_cycle;
+    power_leg_settings[test_leg].duty_cycle = duty_cycle;
+    shield.power.setDutyCycle(test_leg, duty_cycle);
+    shield.power.stop(test_leg);
+    buffer_scope = scope.get_buffer();
+    buffer_size = scope.get_buffer_size() >> 2;
+
+    if (test_leg == LEG1) {
+        pid1.reset();
+    }
+
+    if (test_leg == LEG2) {
+        pid2.reset();
+    }
+#ifdef CONFIG_SHIELD_OWNVERTER
+    if (test_leg == LEG3) {
+        pid3.reset();
+    }
+#endif
+
+    mode = IDLE;
+}
+
+static void run_sensitivity_sequence(void)
+{
+    if (!enable_test_leg) {
+        shield.power.start(test_leg);
+        enable_test_leg = true;
+        duty_cycle = lower_bound;
+        shield.power.setDutyCycle(test_leg, duty_cycle);
+    }
+
+    scope.acquire();
+    a_trigger();
+    scope.has_trigged();
+
+    if (dc_open_cycle) {
+        if (test_leg == LEG1) {
+            duty_cycle = pid1.calculateWithReturn(
+                V_ref,
+                *power_leg_settings[test_leg].tracking_variable);
+        }
+
+        if (test_leg == LEG2) {
+            duty_cycle = pid2.calculateWithReturn(
+                V_ref,
+                *power_leg_settings[test_leg].tracking_variable);
+        }
+#ifdef CONFIG_SHIELD_OWNVERTER
+        if (test_leg == LEG3) {
+            duty_cycle = pid3.calculateWithReturn(
+                V_ref,
+                *power_leg_settings[test_leg].tracking_variable);
+        }
+#endif
+        duty_cycle = clamp_duty_cycle(duty_cycle);
+        shield.power.setDutyCycle(test_leg, duty_cycle);
+        power_leg_settings[test_leg].duty_cycle = duty_cycle;
+        cpt++;
+        if (cpt >= cpt_close_loop) {
+            dc_open_cycle = false;
+        }
+        return;
+    }
+
+    if (!dc_open_cycle && cpt < cpt_open_loop) {
+        if ((cpt < cpt_step_begin) || (cpt > cpt_step_end)) {
+            duty_cycle = duty_cycle_50_perc;
+            shield.power.setDutyCycle(test_leg, duty_cycle);
+        }
+
+        if ((cpt >= cpt_step_begin) && (cpt <= cpt_step_begin + 1)) {
+            duty_cycle = duty_cycle_70_perc;
+            shield.power.setDutyCycle(test_leg, duty_cycle);
+            power_leg_settings[test_leg].duty_cycle = duty_cycle;
+        }
+
+        if ((cpt >= cpt_step_begin + 2) && (cpt <= cpt_step_end - 2)) {
+            duty_cycle = duty_cycle_70_perc;
+            shield.power.setDutyCycle(test_leg, duty_cycle);
+            power_leg_settings[test_leg].duty_cycle = duty_cycle;
+        }
+
+        if ((cpt >= cpt_step_end - 1) && (cpt <= cpt_step_end)) {
+            duty_cycle -= duty_cyle_step;
+            duty_cycle = clamp_duty_cycle(duty_cycle);
+            shield.power.setDutyCycle(test_leg, duty_cycle);
+            power_leg_settings[test_leg].duty_cycle = duty_cycle;
+        }
+
+        cpt++;
+        return;
+    }
+
+    power_leg_settings[test_leg].duty_cycle = duty_cycle;
+    shield.power.setDutyCycle(test_leg, duty_cycle);
+    trig_ratio += (end_trig_ratio - begin_trig_ratio) /
+                  (float32_t)num_trig_ratio_point;
+    if (trig_ratio > end_trig_ratio) {
+        trig_ratio = begin_trig_ratio;
+    }
+    shield.power.setTriggerValue(test_leg, trig_ratio);
+    cpt++;
+
+    if (cpt >= 1000) {
+        stop_all_tests(true);
+    }
+}
+
+static void run_chirp_sequence(void)
+{
+    if (!enable_test_leg) {
+        shield.power.start(test_leg);
+        enable_test_leg = true;
+        duty_cycle = starting_duty_cycle;
+        shield.power.setDutyCycle(test_leg, duty_cycle);
+    }
+
+    scope.acquire();
+    a_trigger();
+    scope.has_trigged();
+
+    float32_t w0 = 2.0F * PI * wave_frequency_hz;
+    wave_theta = ot_modulo_2pi(wave_theta + w0 * Ts);
+    float32_t duty = ot_sin(wave_theta) * wave_amplitude + wave_offset;
+    duty = clamp_duty_cycle(duty);
+
+    duty_cycle = duty;
+    power_leg_settings[test_leg].duty_cycle = duty_cycle;
+    shield.power.setDutyCycle(test_leg, duty_cycle);
+
+    chirp_elapsed_s += Ts;
+    if (chirp_duration_s > 0.0F) {
+        if (chirp_elapsed_s >= chirp_duration_s) {
+            if (chirp_loop_enabled) {
+                chirp_elapsed_s = 0.0F;
+                wave_frequency_hz = chirp_start_frequency;
+            } else {
+                stop_all_tests(true);
+                return;
+            }
+        } else {
+            wave_frequency_hz = chirp_start_frequency +
+                                (chirp_rate_hz_per_s * chirp_elapsed_s);
+        }
+    }
+}
+
+static void run_fixed_frequency_sequence(void)
+{
+    if (!enable_test_leg) {
+        shield.power.start(test_leg);
+        enable_test_leg = true;
+        duty_cycle = starting_duty_cycle;
+        shield.power.setDutyCycle(test_leg, duty_cycle);
+    }
+
+    scope.acquire();
+    a_trigger();
+    scope.has_trigged();
+
+    float32_t w0 = 2.0F * PI * wave_frequency_hz;
+    wave_theta = ot_modulo_2pi(wave_theta + w0 * Ts);
+    float32_t duty = ot_sin(wave_theta) * wave_amplitude + wave_offset;
+    duty = clamp_duty_cycle(duty);
+
+    duty_cycle = duty;
+    power_leg_settings[test_leg].duty_cycle = duty_cycle;
+    shield.power.setDutyCycle(test_leg, duty_cycle);
+}
+
 void loop_control_task()
 {
     // shield.sensors.getValues
@@ -326,6 +542,11 @@ void loop_control_task()
     meas_data = shield.sensors.getLatestValue(I_HIGH);
     if (meas_data != NO_VALUE)
         I_high_value = meas_data;
+
+    if (waveform_stop_requested) {
+        bool request_dump = is_test_performing;
+        stop_all_tests(request_dump);
+    }
 
     if (test_leg == LEG1) {
         meas_tab = shield.sensors.getRawValues(V1_LOW, nb_meas_data_values);
@@ -439,112 +660,20 @@ void loop_control_task()
             // shield.power.start(LEG1);
             
 
-            if (is_test_performing ) {
-                     
-                if (!enable_test_leg){
-                    shield.power.start(test_leg);
-                    enable_test_leg = true;
-                    duty_cycle = lower_bound;
-                    shield.power.setDutyCycle(test_leg, duty_cycle);                    
+            if (is_test_performing) {
+                switch (current_test_profile) {
+                    case TEST_PROFILE_CHIRP:
+                        run_chirp_sequence();
+                        break;
+                    case TEST_PROFILE_FIXED_FREQ:
+                        run_fixed_frequency_sequence();
+                        break;
+                    case TEST_PROFILE_SENSI:
+                    default:
+                        run_sensitivity_sequence();
+                        break;
                 }
-
-                scope.acquire(); // enable scope acquisition
-                a_trigger();
-                scope.has_trigged();
-
-                if (dc_open_cycle){
-                    
-                    if (test_leg == LEG1) {
-                        duty_cycle = pid1.calculateWithReturn(V_ref , 
-                                                            *power_leg_settings[test_leg].tracking_variable);
-                    }
-
-                    if (test_leg == LEG2) {
-                        duty_cycle = pid2.calculateWithReturn(V_ref , 
-                                                            *power_leg_settings[test_leg].tracking_variable);
-                    }
-                #ifdef CONFIG_SHIELD_OWNVERTER
-                    if (test_leg == LEG3) {
-                        duty_cycle = pid3.calculateWithReturn(V_ref , 
-                                                            *power_leg_settings[test_leg].tracking_variable);
-                    }
-                #endif
-                    shield.power.setDutyCycle(test_leg, duty_cycle);
-                    power_leg_settings[test_leg].duty_cycle = duty_cycle;
-                    cpt++;
-                    if (cpt >= cpt_close_loop) dc_open_cycle = false;
-                } 
-                else if (dc_open_cycle == false && cpt < cpt_open_loop){
-                        if ((cpt < cpt_step_begin) || (cpt > cpt_step_end)) {
-                            duty_cycle = duty_cycle_50_perc;
-                            shield.power.setDutyCycle(test_leg, duty_cycle);
-                        }
-
-                        // ramp up the duty cycle
-                        if ((cpt>= cpt_step_begin) && (cpt <= cpt_step_begin+1)) {
-                            // duty_cycle += duty_cyle_step; 
-                            duty_cycle = duty_cycle_70_perc;
-                            shield.power.setDutyCycle(test_leg, duty_cycle);
-                            power_leg_settings[test_leg].duty_cycle = duty_cycle;
-                        }
-
-                        //  duty cycle at 70% 
-                        if ((cpt >= cpt_step_begin + 2) && (cpt <= cpt_step_end - 2)){
-                            duty_cycle = duty_cycle_70_perc;
-                            shield.power.setDutyCycle(test_leg, duty_cycle);
-                            power_leg_settings[test_leg].duty_cycle = duty_cycle;
-                        }
-                        
-                        // ramp down the duty cycle
-                        if ((cpt >= cpt_step_end-1) && (cpt <= cpt_step_end)) {
-                            duty_cycle -= duty_cyle_step; 
-                            shield.power.setDutyCycle(test_leg, duty_cycle);
-                            power_leg_settings[test_leg].duty_cycle = duty_cycle;
-                        }
-            
-                        cpt++;
-                        
-                } 
-                else {
-                    power_leg_settings[test_leg].duty_cycle = duty_cycle;
-                    shield.power.setDutyCycle(test_leg,duty_cycle);
-                    trig_ratio += (end_trig_ratio - begin_trig_ratio) / (float32_t)num_trig_ratio_point;
-                    if (trig_ratio > end_trig_ratio) { // make a cycle
-                        trig_ratio = begin_trig_ratio;
-                    }
-                    shield.power.setTriggerValue(test_leg, trig_ratio);
-                    cpt++;
-                    
-                    if (cpt >= 1000) {
-                        is_test_performing = false; 
-                        is_downloading = true; 
-                        cpt = 1; 
-                        trig_ratio = begin_trig_ratio;
-                        duty_cycle = 0.1;
-                        power_leg_settings[test_leg].duty_cycle = duty_cycle;
-                        shield.power.setDutyCycle(test_leg,duty_cycle);
-                        shield.power.stop(test_leg);
-                        buffer_scope = scope.get_buffer();
-                        buffer_size = scope.get_buffer_size() >> 2; // we divide by 4 (4 bytes per float data)
-                        if (test_leg == LEG1) {
-                            pid1.reset();
-                        }
-
-                        if (test_leg == LEG2) {
-                            pid2.reset();
-                        }
-                    #ifdef CONFIG_SHIELD_OWNVERTER
-                        if (test_leg == LEG3) {
-                            pid3.reset();
-                        }
-                    #endif
-                        enable_test_leg = false;
-                        mode = IDLE;
-                    }
-                }
-                
-            } 
-            else {
+            } else {
                 //Tests if the legs were turned off and does it only once ]
                 if(!pwm_enable_leg_1 && power_leg_settings[LEG1].settings[BOOL_LEG]) {shield.power.start(LEG1); pwm_enable_leg_1 = true;}
                 if(!pwm_enable_leg_2 && power_leg_settings[LEG2].settings[BOOL_LEG]) {shield.power.start(LEG2); pwm_enable_leg_2 = true;}
