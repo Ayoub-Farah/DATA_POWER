@@ -88,6 +88,12 @@ def ensure_leg_ready(shield: Shield_Device, leg: str) -> None:
 
     print(f"Préparation de {leg} pour les essais automatiques…")
     send_and_log(shield, "IDLE")
+    rearm_leg(shield, leg)
+
+
+def rearm_leg(shield: Shield_Device, leg: str) -> None:
+    """Assure que la jambe de test est prête pour un nouvel essai."""
+
     send_and_log(shield, "POWER_ON")
     send_and_log(shield, "LEG", leg, "ON")
     send_and_log(shield, "CAPA", leg, "ON")
@@ -172,6 +178,7 @@ def capture_scope(shield: Shield_Device, timeout: float) -> dict:
 
 def run_sensitivity_test(shield: Shield_Device, leg: str, vref: float) -> None:
     print("\n=== Test de sensibilité (réponse à l'échelon) ===")
+    rearm_leg(shield, leg)
     shield.getSerialObjID().reset_input_buffer()
     send_and_log(shield, "TEST_SENSI", leg, vref, delay=0.5)
     record = capture_scope(shield, timeout=30.0)
@@ -190,6 +197,7 @@ def run_chirp_test(
     loop: int = 0,
 ) -> None:
     print("\n=== Test chirp (balayage fréquentiel) ===")
+    rearm_leg(shield, leg)
     shield.getSerialObjID().reset_input_buffer()
     send_and_log(
         shield,
@@ -218,6 +226,7 @@ def run_fixed_frequency_test(
 ) -> None:
     print("\n=== Test sinusoïdal à fréquence fixe ===")
     serial_obj = shield.getSerialObjID()
+    rearm_leg(shield, leg)
     serial_obj.reset_input_buffer()
     send_and_log(shield, "TEST_FIXED_FREQ", leg, frequency, amplitude, offset, delay=0.5)
     print(f"  Maintien de l'onde pendant {run_duration} s avant arrêt…")
