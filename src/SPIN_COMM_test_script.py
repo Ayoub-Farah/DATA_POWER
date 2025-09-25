@@ -131,7 +131,7 @@ def persist_record(test_name: str, record: dict) -> None:
         print("  Rien à sauvegarder pour ce test.")
         return
 
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     safe_name = test_name.lower().replace(" ", "_")
     out_dir = Path("scope_records")
     out_dir.mkdir(exist_ok=True)
@@ -245,7 +245,9 @@ def main() -> int:
             print(f"{measurement_name} = {value:.3f}")
 
     run_sensitivity_test(shield, leg, vref=15.0)
+    time.sleep(1.0)
     run_chirp_test(shield, leg, start_freq=50.0, end_freq=5000.0, duration=2.0)
+    time.sleep(1.0)
     run_fixed_frequency_test(shield, leg, frequency=500.0, amplitude=0.4, offset=0.5)
 
     send_and_log(shield, "POWER_OFF")
