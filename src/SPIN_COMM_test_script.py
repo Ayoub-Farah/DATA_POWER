@@ -48,12 +48,16 @@ message = Shield.sendCommand("IDLE")
 print(message)
 message = Shield.sendCommand("POWER_ON")
 print(message)
-message = Shield.getMeasurement('V1')
-print(message)
-message = Shield.getMeasurement('V2')
-print(message)
-message = Shield.getMeasurement('V3')
-print(message)
+available_measurements = set(Shield.get_supported_measurements())
+for measurement_name in ("V1", "V2", "V3"):
+    if measurement_name in available_measurements:
+        message = Shield.getMeasurement(measurement_name)
+        print(message)
+    else:
+        print(
+            f"Measurement {measurement_name} is not available for {Shield.shield_type} "
+            "shields."
+        )
 
 message = Shield.sendCommand("POWER_OFF")
 print(message)

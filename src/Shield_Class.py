@@ -79,7 +79,7 @@ class Shield_Device:
                                     "V2": {"index": 7},
                                     "M2": {"index": 8},
                                     "T2": {"index": 9},
-                                    "D2": {"index": 10},
+                                    "D3": {"index": 10},
                                     "I3": {"index": 11},
                                     "V3": {"index": 12},
                                     "M3": {"index": 13},
@@ -91,7 +91,7 @@ class Shield_Device:
                                     "CR": {"index": 19},
                                     "RS": {"index": 20}}
 
-        if self.shield_type is "TWIST" :
+        if self.shield_type == "TWIST" :
             self.shield_message_index = twist_message_index
             self.message_lenght = twist_message_length
 
@@ -111,6 +111,10 @@ class Shield_Device:
 
     def getSerialObjID(self):
         return self.shield_serialObj
+
+    def get_supported_measurements(self):
+        """Return the tuple of measurement identifiers exposed by the shield."""
+        return tuple(self.shield_message_index.keys())
 
 
     def sendMessage(self,Message):
@@ -151,27 +155,36 @@ class Shield_Device:
 
     def getMeasurement(self, measurement_type):
         """
-        Retrieves the TWIST measurement value based on the measurement type.
-        This MUST be called when the Twist is in POWER ON
+        Retrieve the latest measurement published by the shield for the given
+        ``measurement_type``. This method must be called while the converter is
+        in ``POWER ON`` so that telemetry frames are streamed on the serial
+        link.
 
-        Parameters:
-            - self: Instance of the class containing the measurement methods.
-            - measurement_type (str): Type of measurement to retrieve.
-              Supported types are 'V1', 'V2', 'V3','VH', 'I1', 'I2', 'I3','IH', 'M1', 'M2', 'M3', 'T1', 'T2', 'T3','CT'.
+        Parameters
+        ----------
+        measurement_type: str
+            Identifier of the measurement to read (for example ``"V1"`` or
+            ``"IH"``). The list of supported identifiers depends on the shield
+            family that was selected when instantiating :class:`Shield_Device`.
 
+        Returns
+        -------
+        float
+            The value parsed from the latest telemetry frame for the requested
+            measurement.
 
-        Returns:
-            - Measurement value corresponding to the specified measurement type.
-
-        Raises:
-            - ValueError: If an invalid measurement type is provided.
+        Raises
+        ------
+        ValueError
+            If ``measurement_type`` is not part of the measurements advertised
+            by the current shield.
         """
         if measurement_type not in self.shield_message_index:
-            raise ValueError("Invalid measurement type. Supported types are:    \
-                             'V1', 'V2', 'V3','VH',                             \
-                             'I1', 'I2', 'I3','IH',                             \
-                             'M1', 'M2', 'M3',                                  \
-                             'T1', 'T2', 'T3'.")
+            supported = ", ".join(sorted(self.shield_message_index.keys()))
+            raise ValueError(
+                "Invalid measurement type for {shield}. Supported types are: {supported}."
+                .format(shield=self.shield_type, supported=supported)
+            )
 
         # time.sleep(self.short_delay)
         index_meas = self.shield_message_index[measurement_type]["index"]
