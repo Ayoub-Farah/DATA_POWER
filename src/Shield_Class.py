@@ -26,6 +26,7 @@ SPDX-License-Identifier: LGLPV2.1
 """
 
 #Python modules import
+import inspect
 import time, serial
 
 class Shield_Device:
@@ -253,21 +254,6 @@ class Shield_Device:
             >>> sendCommand("LEG", "A", "ON")
         """
 
-        action_types = (
-            "LEG",
-            "CAPA",
-            "DRIVER",
-            "BUCK",
-            "BOOST",
-            "REFERENCE",
-            "DUTY",
-            "CALIBRATE",
-            "TEST_SENSI",
-            "TEST_CHIRP",
-            "TEST_FIXED_FREQ",
-            "TEST_WAVE_STOP",
-        )
-
         # Dictionary mapping actions to their message formats
         message_formats = {
             "IDLE": "d_i",
@@ -305,8 +291,21 @@ class Shield_Device:
         if action not in message_formats:
             raise ValueError(f"Invalid action: {action}")
 
-        # Generate message based on action and arguments
-        message = message_formats[action](*args) if action in action_types else message_formats[action]
+        formatter = message_formats[action]
+        if callable(formatter):
+            try:
+                message = formatter(*args)
+            except TypeError as exc:
+                signature = inspect.signature(formatter)
+                raise ValueError(
+                    f"Action {action} expects arguments matching {signature}, received {args}."
+                ) from exc
+        else:
+            if args:
+                raise ValueError(
+                    f"Action {action} does not take any arguments. Received unexpected values: {args}."
+                )
+            message = formatter
 
         # Send the generated message via serial communication
         self.sendMessage(message)
