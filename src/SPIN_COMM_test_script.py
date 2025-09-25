@@ -34,6 +34,13 @@ shield_pid = 0x0101
 Shield_ports = find_devices.find_shield_device_ports(shield_vid, shield_pid)
 print(Shield_ports)
 
+if not Shield_ports:
+    raise SystemExit(
+        "Unable to automatically locate an OwnTech shield. "
+        "Verify that the board is connected and recognized by the OS, "
+        "or pass the desired serial port explicitly to Shield_Device."
+    )
+
 Shield = Shield_Device(shield_port= Shield_ports[0], shield_type= "TWIST")
 
 
