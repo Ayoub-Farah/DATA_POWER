@@ -27,6 +27,7 @@ SPDX-License-Identifier: LGLPV2.1
 
 #Python modules import
 import inspect
+import struct
 import time, serial
 
 class Shield_Device:
@@ -152,6 +153,137 @@ class Shield_Device:
 
         # Send the end of line
         self.shield_serialObj.write(b'\r\n')
+
+
+    def wait_for_scope_record(self, timeout=20.0):
+        """Wait for a scope record dump and decode it into structured samples.
+
+        Parameters
+        ----------
+        timeout: float, optional
+            Maximum number of seconds to wait for the full capture.  The timer
+            covers the entire transaction between the ``begin record`` and
+            ``end record`` markers.
+
+        Returns
+        -------
+        dict
+            A dictionary with the following keys:
+
+            ``columns``
+                Tuple of column names advertised in the record header.
+
+            ``index``
+                Optional integer index reported by the firmware (``None`` if
+                missing).
+
+            ``samples``
+                List of dictionaries, each mapping a column name to the float
+                value decoded for a single sample.
+
+            ``raw``
+                The raw hexadecimal payload lines as emitted by the firmware.
+
+        Raises
+        ------
+        TimeoutError
+            If the record terminator is not received before *timeout*
+            elapses.
+        RuntimeError
+            If the capture is malformed (missing header or inconsistent
+            payload size).
+        """
+
+        deadline = time.time() + timeout
+        serial_obj = self.shield_serialObj
+        in_record = False
+        header_lines = []
+        payload_lines = []
+
+        while time.time() < deadline:
+            raw_line = serial_obj.readline()
+            if not raw_line:
+                continue
+
+            try:
+                line = raw_line.decode("ascii", errors="ignore").strip()
+            except UnicodeDecodeError:
+                # Skip undecodable garbage and keep listening.
+                continue
+
+            if not line:
+                continue
+
+            if line == "begin record":
+                in_record = True
+                header_lines.clear()
+                payload_lines.clear()
+                continue
+
+            if not in_record:
+                # Ignore any other console output.
+                continue
+
+            if line == "end record":
+                return self._parse_scope_record(header_lines, payload_lines)
+
+            if line.startswith("#") and len(header_lines) < 2:
+                header_lines.append(line)
+                continue
+
+            payload_lines.append(line)
+
+        raise TimeoutError("Timed out waiting for the scope record to finish.")
+
+
+    @staticmethod
+    def _parse_scope_record(header_lines, payload_lines):
+        if not header_lines:
+            raise RuntimeError("Scope record did not include a header line.")
+
+        header = header_lines[0].lstrip("#").strip()
+        columns = [token.strip() for token in header.split(",") if token.strip()]
+
+        record_index = None
+        if len(header_lines) > 1:
+            candidate = header_lines[1].lstrip("#").strip()
+            if candidate:
+                try:
+                    record_index = int(candidate)
+                except ValueError:
+                    # Some firmwares reuse this line for additional headers.
+                    pass
+
+        if not columns:
+            raise RuntimeError("Scope record header did not expose any columns.")
+
+        floats = []
+        for entry in payload_lines:
+            try:
+                floats.append(struct.unpack('>f', bytes.fromhex(entry))[0])
+            except (ValueError, struct.error):
+                # Ignore malformed entries but keep track of the raw payload.
+                continue
+
+        stride = len(columns)
+        if stride == 0 or len(floats) < stride:
+            samples = []
+        else:
+            trimmed_length = len(floats) - (len(floats) % stride)
+            samples = [
+                {
+                    column: floats[offset + idx]
+                    for idx, column in enumerate(columns)
+                }
+                for offset in range(0, trimmed_length, stride)
+            ]
+
+        return {
+            "columns": tuple(columns),
+            "index": record_index,
+            "samples": samples,
+            "raw": tuple(payload_lines),
+        }
 
 
     def getMeasurement(self, measurement_type):
