@@ -43,7 +43,9 @@ class RecordedDatas:
         self.buffer = ""
         self.message_size = message_size
         self.f = io.StringIO()
-        self.debug = False
+        # Flag used to toggle debug messages, defaults to disabled so existing
+        # callers that expect ``debug_enabled`` can safely enable it later.
+        self.debug_enabled = False
         print("Connection established on", port)
 
     def read_serial(self):
@@ -194,7 +196,7 @@ class RecordedDatas:
 
     def _debug(self, message):
         """Afficher les messages de debug lorsque l'option est activée."""
-        if getattr(self, "debug", False):
+        if getattr(self, "debug_enabled", False):
             print(f"[RecordedDatas] {message}")
 
 # Exemple d'utilisation
