@@ -43,6 +43,7 @@ class RecordedDatas:
         self.buffer = ""
         self.message_size = message_size
         self.f = io.StringIO()
+        self.debug = False
         print("Connection established on", port)
 
     def read_serial(self):
@@ -68,9 +69,9 @@ class RecordedDatas:
                 # if len(datas_left) == 0 :
                     idx = txt_to_read.find('end record')
                     txt_to_read = txt_to_read[:idx]
-                    
-                    
+
                     lines = txt_to_read.split("\r\n")
+                    self._debug(f"Processing {len(lines)} lines before saving (end record)")
                     datas_left = self.save_datas(lines)
                     self.state = IDLE
                     
@@ -84,6 +85,7 @@ class RecordedDatas:
                 # Enregistrer les données si en mode RECORD
                 if self.state == RECORD:
                     lines = txt_to_read.split("\r\n")
+                    self._debug(f"Processing {len(lines)} lines before saving")
                     datas_left = self.save_datas(lines)
 
                 self.buffer = datas_left + self.buffer[cr_idx:]
@@ -189,6 +191,11 @@ class RecordedDatas:
     def close(self):
         """Fermer la connexion série."""
         self.serial_port.close()
+
+    def _debug(self, message):
+        """Afficher les messages de debug lorsque l'option est activée."""
+        if getattr(self, "debug", False):
+            print(f"[RecordedDatas] {message}")
 
 # Exemple d'utilisation
 # if __name__ == "__main__":
