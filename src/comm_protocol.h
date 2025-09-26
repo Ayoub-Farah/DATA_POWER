@@ -206,6 +206,7 @@ extern float32_t chirp_rate_hz_per_s;
 extern bool chirp_loop_enabled;
 extern bool waveform_stop_requested;
 extern bool enable_test_leg;
+void scope_prepare_for_new_test(void);
 extern uint8_t num_tracking_vars;
 extern uint8_t num_power_settings;
 extern uint8_t num_default_commands;

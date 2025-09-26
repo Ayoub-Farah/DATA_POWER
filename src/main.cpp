@@ -138,6 +138,31 @@ static uint32_t print_counter = 0;
 static float32_t local_analog_value=0;
 
 bool enable_test_leg = false;
+
+void scope_prepare_for_new_test(void)
+{
+    /*
+     * Disable the acquisition gate first so the ScopeMimicry instance waits
+     * for the next rising edge before it starts filling its circular buffer.
+     * This prevents the following capture from reusing a portion of the
+     * previous test when the firmware re-arms the scope very quickly.
+     */
+    enable_acq = false;
+
+    /* Reset the dump cursor and clear the "already triggered" flag so the
+     * Python host receives a fresh record whose sample zero corresponds to
+     * the beginning of the upcoming automated test. Calling has_trigged()
+     * resets the internal latch inside ScopeMimicry.
+     */
+    scope.reset_dump();
+    scope.has_trigged();
+
+    /* Re-enable the trigger gate right away. On the next control-loop
+     * iteration the acquisition function will observe enable_acq = true and
+     * start writing the newly generated waveform from sample index zero.
+     */
+    enable_acq = true;
+}
 test_profile_t current_test_profile = TEST_PROFILE_NONE;
 bool waveform_stop_requested = false;
 float32_t wave_theta = 0.0F;
@@ -340,6 +365,7 @@ static void stop_all_tests(bool request_dump)
         is_downloading = true;
     }
 
+    enable_acq = false;
     waveform_stop_requested = false;
     is_test_performing = false;
     current_test_profile = TEST_PROFILE_NONE;

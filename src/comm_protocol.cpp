@@ -365,6 +365,7 @@ void vrefHandler(uint8_t power_leg, uint8_t setting_position) {
         chirp_elapsed_s = 0.0F;
         wave_theta = 0.0F;
         chirp_loop_enabled = false;
+        scope_prepare_for_new_test();
     } else {
         printk("Invalid protocol format: %s\n", bufferstr);
     }
@@ -471,6 +472,7 @@ void chirpHandler(uint8_t test_leg_unused, uint8_t setting_position_unused)
     current_test_profile = TEST_PROFILE_CHIRP;
     is_test_performing = true;
     dc_open_cycle = false;
+    scope_prepare_for_new_test();
 }
 
 void fixedFrequencyHandler(uint8_t test_leg_unused, uint8_t setting_position_unused)
@@ -528,6 +530,7 @@ void fixedFrequencyHandler(uint8_t test_leg_unused, uint8_t setting_position_unu
     current_test_profile = TEST_PROFILE_FIXED_FREQ;
     is_test_performing = true;
     dc_open_cycle = false;
+    scope_prepare_for_new_test();
 }
 
 void waveStopHandler(uint8_t test_leg_unused, uint8_t setting_position_unused)
