@@ -1957,10 +1957,10 @@ class FactoryTest:
 
 
 
-    def simuTest(self): 
+    def simuTest(self):
         Vhigh_tension = 25
         self.PowerSupply.setCurrentLimit_A(3.0)
-        self.PowerSupply.setVoltage_V(Vhigh_tension) #Fix to 25V
+        self.PowerSupply.setVoltage_V(Vhigh_tension)  # Fix to 25V
         self.PowerSupply.powerON()
 
         """
@@ -1974,191 +1974,242 @@ class FactoryTest:
 
         # time.sleep(5) # Pause 2s to start active load
 
+        chirp_start_freq = 50.0
+        chirp_end_freq = 5000.0
+        chirp_duration = 2.0
+        chirp_amplitude = 0.4
+        chirp_offset = 0.5
+        chirp_loop = 0
 
         if not self.recorded_data_DUT.serial_port.is_open:
             self.recorded_data_DUT.serial_port.open()
-        
+
+        serial_obj = self.recorded_data_DUT.serial_port
+
         # Change the code test_sensibilite to get value from specified in scope mimicry
         leg = 'LEG1'
         Vref = Vhigh_tension / 2
-        
-
         Ts = 1e-4
-        SPIN_Comm.SendCommand(self.recorded_data_DUT.serial_port,"POWER_ON")
-        SPIN_Comm.SendCommand(self.DUT, "CAPA", leg, "ON")
-        SPIN_Comm.SendCommand(self.DUT, "DRIVER", leg,"ON", delay=3)
-        SPIN_Comm.SendCommand(self.recorded_data_DUT.serial_port, "TEST_SENSI", leg, Vref, delay=1) # does sensitivity test
+
+        def clear_input_buffer():
+            if hasattr(serial_obj, "reset_input_buffer"):
+                serial_obj.reset_input_buffer()
+            else:
+                serial_obj.flushInput()
+
+        def rearm_leg():
+            SPIN_Comm.SendCommand(serial_obj, "POWER_ON")
+            SPIN_Comm.SendCommand(serial_obj, "LEG", leg, "ON")
+            SPIN_Comm.SendCommand(serial_obj, "CAPA", leg, "ON")
+            SPIN_Comm.SendCommand(serial_obj, "DRIVER", leg, "ON", delay=3)
+
+        def run_scope_sequence(test_label, command_name, *args, delay=0.5):
+            print(f"Lancement de {test_label}…")
+            rearm_leg()
+            clear_input_buffer()
+            SPIN_Comm.SendCommand(serial_obj, command_name, *args, delay=delay)
+            try:
+                file_path_local = self.recorded_data_DUT.read_serial()
+            except KeyboardInterrupt:
+                print("Process interrupted by user.")
+                return None
+            print(f"Données enregistrées pour {test_label} : {file_path_local}")
+            return file_path_local
+
+        def load_scope_data(file_path_local, sample_time):
+            if not file_path_local:
+                return {}, np.array([]), 0
+
+            filename_csv = file_path_local + '.csv'
+            columns_local = {}
+
+            with open(filename_csv, mode='r', encoding='utf-8-sig') as file:
+                reader = csv.DictReader(file)
+                if not reader.fieldnames:
+                    return {}, np.array([]), 0
+
+                for column_name in reader.fieldnames:
+                    columns_local[column_name] = []
+
+                for row in reader:
+                    for column_name in reader.fieldnames:
+                        value = row.get(column_name, "")
+                        if value == "" or value is None:
+                            columns_local[column_name].append(float('nan'))
+                        else:
+                            columns_local[column_name].append(float(value))
+
+            record_size_local = len(next(iter(columns_local.values()))) if columns_local else 0
+            sim_time_local = record_size_local * sample_time
+            time_values_local = (
+                np.linspace(0, sim_time_local, record_size_local)
+                if record_size_local
+                else np.array([])
+            )
+
+            return columns_local, time_values_local, record_size_local
+
+        def append_results_to_csv(section_title, results_dict):
+            if not results_dict:
+                return
+            with open(self.CSVPathTest, mode='a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([])
+                writer.writerow([section_title])
+                for key, value in results_dict.items():
+                    writer.writerow([key, value])
+
+        def append_scope_to_csv(section_title, time_values_local, columns_local):
+            if not columns_local:
+                return
+            with open(self.CSVPathTest, mode='a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([])
+                writer.writerow([section_title])
+                header = ['Time (s)'] + list(columns_local.keys())
+                writer.writerow(header)
+                num_rows = len(next(iter(columns_local.values())))
+                for i in range(num_rows):
+                    row = [time_values_local[i] if len(time_values_local) > i else float(i) * Ts]
+                    row += [columns_local[col][i] for col in columns_local]
+                    writer.writerow(row)
+
+        sensi_file_path = None
+        chirp_file_path = None
 
         try:
-            file_path = self.recorded_data_DUT.read_serial()
-        except KeyboardInterrupt:
-            print("Process interrupted by user.")
+            sensi_file_path = run_scope_sequence(
+                "TEST_SENSI",
+                "TEST_SENSI",
+                leg,
+                Vref,
+                delay=1.0,
+            )
+
+            if sensi_file_path:
+                chirp_file_path = run_scope_sequence(
+                    "TEST_CHIRP",
+                    "TEST_CHIRP",
+                    leg,
+                    chirp_start_freq,
+                    chirp_end_freq,
+                    chirp_duration,
+                    chirp_amplitude,
+                    chirp_offset,
+                    chirp_loop,
+                    delay=0.5,
+                )
         finally:
-            self.recorded_data_DUT.close()
-        # self.PowerSupply.powerOFF()
+            if serial_obj.is_open:
+                try:
+                    SPIN_Comm.SendCommand(serial_obj, "POWER_OFF", delay=0.5)
+                except Exception as exc:
+                    print(f"POWER_OFF command failed: {exc}")
+                self.recorded_data_DUT.close()
 
+        sensi_columns, sensi_time_values, sensi_record_size = load_scope_data(sensi_file_path, Ts)
 
-        filename_txt = file_path + '.txt'
-        filename_csv = file_path + '.csv'
-        
-      
-        # Dictionnaire pour stocker les colonnes
-        columns = {}
+        if sensi_columns:
+            beginning_step = 600  # step begins at the 600th point
+            ending_step = 800  # step ends at the 800th point
+            if leg == 'LEG1':
+                Vlow_name = 'V1_low'
+                Ilow_name = 'I1_low'
+                Power_name = 'P1_output'
+            else:
+                Vlow_name = 'V2_low'
+                Ilow_name = 'I2_low'
+                Power_name = 'P1_output'
 
-        # Lecture du fichier CSV
-        with open(filename_csv, mode='r', encoding='utf-8-sig') as file:
-            reader = csv.DictReader(file)
+            required_columns = [Vlow_name, Ilow_name, 'V_high', 'I_high']
+            if all(name in sensi_columns for name in required_columns):
+                Record_Size = sensi_record_size
+                voltagePortion = sensi_columns[Vlow_name][beginning_step:ending_step]
+                final_value_voltage = voltagePortion[-1] if voltagePortion else 0
+                settling_threshold = 0.05
+                timePortion = sensi_time_values[beginning_step:ending_step]
 
-            # Initialisation des listes pour chaque colonne
-            for column_name in reader.fieldnames:
-                print(column_name)
-                columns[column_name] = []
-            
-            # Parcours de chaque ligne du fichier CSV
-            for row in reader:
-                for column_name in reader.fieldnames:
-                    columns[column_name].append(float(row[column_name]))
-                
+                sensi_columns[Power_name] = []
+                sensi_columns["P_in"] = []
+                sensi_columns["efficiency"] = []
 
-        beginning_step = 600 # step begins at the 600th point
-        ending_step = 800 # step ends at the 800th point
-        if leg == 'LEG1' : 
-            Vlow_name = 'V1_low'
-            Ilow_name = 'I1_low'
-            Power_name = 'P1_output'
-            Temp_name = 'T1'
-        else : 
-            Vlow_name = 'V2_low'
-            Ilow_name = 'I2_low'
-            Power_name = 'P1_output'
-            Temp_name = 'T2'
-        Record_Size = len(columns[Ilow_name]) # 1000
-        # print(columns[Vlow_name][beginning_step:ending_step])
-        # print(columns[Vlow_name])
-        voltagePortion = columns[Vlow_name][beginning_step:ending_step]
-        currentPortion = columns[Ilow_name][beginning_step:ending_step]
-        sim_time = Record_Size * Ts
-        final_value_voltage = voltagePortion[-1]
-        settling_threshold = 0.05
-        time_values = np.linspace(0, sim_time, Record_Size)
-        timePortion = time_values[beginning_step:ending_step]
+                for i in range(Record_Size):
+                    V_low = sensi_columns[Vlow_name][i]
+                    I_low = sensi_columns[Ilow_name][i]
+                    V_high = sensi_columns["V_high"][i]
+                    I_high = sensi_columns["I_high"][i]
 
-        # establishing output powers
-        # columns[Power_name] = []
-        # for i in range(Record_Size):
-        #     columns[Power_name].append(columns[Vlow_name][i] * columns[Ilow_name][i])
+                    P_out = V_low * I_low
+                    P_in = V_high * I_high
+                    efficiency = P_out / P_in if P_in != 0 else 0
 
-        columns[Power_name] = []
-        columns["P_in"] = []
-        columns["efficiency"] = []
+                    sensi_columns[Power_name].append(P_out)
+                    sensi_columns["P_in"].append(P_in)
+                    sensi_columns["efficiency"].append(efficiency)
 
-        for i in range(Record_Size):
-            V_low = columns[Vlow_name][i]
-            I_low = columns[Ilow_name][i]
-            V_high = columns["V_high"][i]
-            I_high = columns["I_high"][i]
+                results = {}
 
-            P_out = V_low * I_low
-            P_in = V_high * I_high
-            efficiency = P_out / P_in if P_in != 0 else 0
+                stable = False
+                settling_time = np.nan
 
-            columns[Power_name].append(P_out)
-            columns["P_in"].append(P_in)
-            columns["efficiency"].append(efficiency)
-                
-        # columns["P2_low"] = []
-        # for i in range(Record_Size):
-        #     columns["P2_low"] = columns["V2_low"][i] * columns["I2_low"][i]
-
-        # columns["T1"] = []
-        # columns[Temp_name] = []
-
-        # print(columns.keys())
-
-        results = {}
-
-        # # Maintenant, chaque colonne est stockée dans une variable distincte
-        # # par exemple, si le fichier contient une colonne "Nom", vous pouvez y accéder via `columns['Nom']`
-
-        # ### calculation of settling time 
-
-
-        # Initialisation des variables
-        stable = False
-        settling_time = np.nan
-
-        # Recherche du temps de stabilisation
-        for j in range(len(voltagePortion)):
-            if abs(voltagePortion[j] - final_value_voltage) < abs(settling_threshold * final_value_voltage):
-                stable = True
-                for k in range(j, len(voltagePortion)):
-                    if abs(voltagePortion[k] - final_value_voltage) > settling_threshold * final_value_voltage:
-                        
-                        stable = False
+                for j in range(len(voltagePortion)):
+                    if final_value_voltage == 0:
                         break
-                if stable:
-                    settling_time = timePortion[j]
-                    break
+                    if abs(voltagePortion[j] - final_value_voltage) < abs(settling_threshold * final_value_voltage):
+                        stable = True
+                        for k in range(j, len(voltagePortion)):
+                            if abs(voltagePortion[k] - final_value_voltage) > settling_threshold * final_value_voltage:
+                                stable = False
+                                break
+                        if stable:
+                            settling_time = timePortion[j]
+                            break
 
-        # Convertir le temps de stabilisation en millisecondes
-        settling_time_ms = settling_time  * 1000
-        overshoot = ((max(voltagePortion) - final_value_voltage) / final_value_voltage) *  100
-        print(max(voltagePortion))
-        print(final_value_voltage)
-        results["settling_time_ms"] = settling_time_ms
-        results["overshoot"] = overshoot
+                settling_time_ms = settling_time * 1000 if not np.isnan(settling_time) else np.nan
+                overshoot = (
+                    ((max(voltagePortion) - final_value_voltage) / final_value_voltage) * 100
+                    if final_value_voltage != 0 and voltagePortion
+                    else np.nan
+                )
+                print(max(voltagePortion) if voltagePortion else "No voltage data")
+                print(final_value_voltage)
+                results["settling_time_ms"] = settling_time_ms
+                results["overshoot"] = overshoot
 
-        # Calcul des moyennes entre les points 200 et 550
-        avg_start = 500
-        avg_end = 600
+                avg_start = 500
+                avg_end = 600
 
-        P_out_list = columns[Power_name][avg_start:avg_end]
-        eff_list = columns["efficiency"][avg_start:avg_end]
+                P_out_list = sensi_columns[Power_name][avg_start:avg_end]
+                eff_list = sensi_columns["efficiency"][avg_start:avg_end]
 
-        avg_P_out = sum(P_out_list) / len(P_out_list)
-        avg_eff = sum(eff_list) / len(eff_list)
+                avg_P_out = sum(P_out_list) / len(P_out_list) if P_out_list else float('nan')
+                avg_eff = sum(eff_list) / len(eff_list) if eff_list else float('nan')
 
-        # Calcul de l'amplitude crête à crête du courant I_low entre les points 900 et la fin
-        I_low_list = columns[Ilow_name][900:]
-        if I_low_list:
-            peak_to_peak_I_low = max(I_low_list) - min(I_low_list)
+                I_low_list = sensi_columns[Ilow_name][900:]
+                if I_low_list:
+                    peak_to_peak_I_low = max(I_low_list) - min(I_low_list)
+                else:
+                    peak_to_peak_I_low = float('nan')
+
+                results["I_low_peak_to_peak (900-end)"] = peak_to_peak_I_low
+                results["avg_P_out (500-600)"] = avg_P_out
+                results["avg_efficiency (500-600)"] = avg_eff
+
+                print(f"Settling Time (ms): {settling_time_ms}")
+                print(f"Overshoot (%): {overshoot}")
+
+                append_results_to_csv("--- SIMU TEST RESULTS ---", results)
+                append_scope_to_csv("--- SIMU SIGNALS (TEST_SENSI) ---", sensi_time_values, sensi_columns)
+            else:
+                print("Colonnes manquantes pour le test de sensibilité, aucun résultat calculé.")
         else:
-            peak_to_peak_I_low = float('nan')  # en cas de liste vide
+            print("Aucune donnée disponible pour le test de sensibilité.")
 
-        results["I_low_peak_to_peak (900-end)"] = peak_to_peak_I_low
-
-        results["avg_P_out (500-600)"] = avg_P_out
-        results["avg_efficiency (500-600)"] = avg_eff
-
-        # Affichage du résultat
-        print(f"Settling Time (ms): {settling_time_ms}")
-        print(f"Overshoot (%): {overshoot}")
-
-        # self.CSVPathTest = f"twist_log_20250520-155816.csv" # just for the test 
-
-        with open(self.CSVPathTest, mode='a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([])  # ligne vide pour séparation
-            writer.writerow(["--- SIMU TEST RESULTS ---"])
-            for key, value in results.items():
-                writer.writerow([key, value])
-
-        with open(self.CSVPathTest, mode='a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([])  # ligne vide pour séparer
-            writer.writerow(["--- SIMU SIGNALS ---"])
-            
-            # Écriture des entêtes
-            header = ['Time (s)']
-            header += list(columns.keys())
-            writer.writerow(header)
-
-            # Transposer les colonnes pour les écrire ligne par ligne
-            num_rows = len(next(iter(columns.values())))
-            for i in range(num_rows):
-                row = [time_values[i]]  # Time
-                row += [columns[col][i] for col in columns]
-                writer.writerow(row)
+        chirp_columns, chirp_time_values, _ = load_scope_data(chirp_file_path, Ts)
+        if chirp_columns:
+            append_scope_to_csv("--- SIMU SIGNALS (TEST_CHIRP) ---", chirp_time_values, chirp_columns)
+        else:
+            print("Aucune donnée disponible pour le test de chirp.")
 
 
 
@@ -2248,11 +2299,35 @@ class FactoryTest:
         print(message)
         message = SPIN_Comm.SendCommand(self.DUT, "POWER_ON", delay=1)
         print(message)
-    
 
+        fixed_frequency_hz = 200.0
+        fixed_wave_duration_s = 2.0
+        fixed_wave_amplitude = 0.4
+        fixed_wave_offset = 0.5
+
+        print(
+            f"Application d'une sinusoïde fixe à {fixed_frequency_hz} Hz pendant {fixed_wave_duration_s} s avant le cyclage thermique."
+        )
+        if hasattr(self.DUT, "reset_input_buffer"):
+            self.DUT.reset_input_buffer()
+        else:
+            self.DUT.flushInput()
+        SPIN_Comm.SendCommand(
+            self.DUT,
+            "TEST_FIXED_FREQ",
+            leg_to_test,
+            fixed_frequency_hz,
+            fixed_wave_amplitude,
+            fixed_wave_offset,
+            delay=0.5,
+        )
+        time.sleep(max(fixed_wave_duration_s, 0))
+        SPIN_Comm.SendCommand(self.DUT, "TEST_WAVE_STOP", leg_to_test, delay=0.5)
+
+        
 
         print(f"\nTemp limit {temp_limit}")
-    
+
         # Open CSV file in write mode
         with open(filename, mode='w', newline='') as file:
             writer = csv.writer(file)
