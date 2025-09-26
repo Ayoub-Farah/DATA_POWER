@@ -2003,15 +2003,18 @@ class FactoryTest:
             SPIN_Comm.SendCommand(serial_obj, "CAPA", leg, "ON")
             SPIN_Comm.SendCommand(serial_obj, "DRIVER", leg, "ON", delay=3)
 
-        def run_scope_sequence(test_label, command_name, *args, delay=0.5):
+        def run_scope_sequence(test_label, command_name, *args, delay=0.5, timeout=30.0):
             print(f"Lancement de {test_label}…")
             rearm_leg()
             clear_input_buffer()
             SPIN_Comm.SendCommand(serial_obj, command_name, *args, delay=delay)
             try:
-                file_path_local = self.recorded_data_DUT.read_serial()
+                file_path_local = self.recorded_data_DUT.read_serial(timeout=timeout)
             except KeyboardInterrupt:
                 print("Process interrupted by user.")
+                return None
+            except TimeoutError as exc:
+                print(f"Timeout pendant {test_label} : {exc}")
                 return None
             print(f"Données enregistrées pour {test_label} : {file_path_local}")
             return file_path_local
@@ -2084,6 +2087,7 @@ class FactoryTest:
                 leg,
                 Vref,
                 delay=1.0,
+                timeout=30.0,
             )
 
             if sensi_file_path:
@@ -2098,6 +2102,7 @@ class FactoryTest:
                     chirp_offset,
                     chirp_loop,
                     delay=0.5,
+                    timeout=max(chirp_duration + 10.0, 20.0),
                 )
         finally:
             if serial_obj.is_open:

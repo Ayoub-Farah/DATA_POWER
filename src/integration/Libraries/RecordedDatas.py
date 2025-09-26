@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import time
 
 def install_package(package_name):
     """Install the package using pip if it's not installed."""
@@ -45,23 +46,36 @@ class RecordedDatas:
         self.f = io.StringIO()
         print("Connection established on", port)
 
-    def read_serial(self):
+    def read_serial(self, timeout=None):
         """Lire les données du port série et traiter les messages."""
         cpt = 0
+        start_time = time.monotonic()
+        record_deadline = None
         while True:
+            if timeout is not None:
+                now = time.monotonic()
+                if record_deadline is not None:
+                    if now >= record_deadline:
+                        self._reset_capture_state()
+                        raise TimeoutError("Timeout while receiving scope payload.")
+                elif now - start_time >= timeout:
+                    self._reset_capture_state()
+                    raise TimeoutError("Timeout waiting for scope record start.")
             data = self.serial_port.read(self.serial_port.in_waiting or 1).decode('utf-8', errors='replace')
             self.buffer += data
             if '\n' in self.buffer:
                 datas_left = ''
                 cr_idx = self.buffer.rfind('\n')
                 txt_to_read = self.buffer[:cr_idx]
-                
-                
+
+
                 # Détection de "begin record"
                 if 'begin record' in txt_to_read:
                     idx = txt_to_read.find('begin record\r\n')
                     txt_to_read = txt_to_read[idx+self.message_size:]
                     self.state = RECORD
+                    if timeout is not None:
+                        record_deadline = time.monotonic() + timeout
 
                 # Détection de "end record"
                 if 'end record' in txt_to_read:
@@ -69,12 +83,13 @@ class RecordedDatas:
                     idx = txt_to_read.find('end record')
                     txt_to_read = txt_to_read[:idx]
                     
-                    
+
                     lines = txt_to_read.split("\r\n")
                     datas_left = self.save_datas(lines)
                     self.state = IDLE
-                    
-                
+                    record_deadline = None
+
+
 
                     # Sauvegarder les données dans un fichier
                     return self.save_to_file()
@@ -112,6 +127,16 @@ class RecordedDatas:
                 except:
                     self.f.write("{}\n".format(line))
         return datas_left
+
+    def _reset_capture_state(self):
+        """Réinitialise les tampons internes lorsqu'une capture échoue."""
+        self.state = IDLE
+        self.buffer = ""
+        try:
+            self.f.close()
+        except Exception:
+            pass
+        self.f = io.StringIO()
 
     def save_to_file(self):
         """Enregistre les données dans un fichier et produit un fichier CSV et PNG."""
