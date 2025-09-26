@@ -19,6 +19,7 @@ import serial
 import struct
 import os
 import io
+import time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -48,12 +49,22 @@ class RecordedDatas:
         self.debug_enabled = False
         print("Connection established on", port)
 
-    def read_serial(self):
-        """Lire les données du port série et traiter les messages."""
+    def read_serial(self, timeout=None):
+        """Lire les données du port série et traiter les messages.
+
+        Args:
+            timeout (float | None): durée maximale (en secondes) pendant laquelle
+                on attend des données supplémentaires avant de lever un
+                ``TimeoutError``. Lorsque ``None`` (valeur par défaut), la
+                méthode reste bloquée jusqu'à réception d'un "end record".
+        """
         cpt = 0
+        last_activity = time.monotonic()
         while True:
             data = self.serial_port.read(self.serial_port.in_waiting or 1).decode('utf-8', errors='replace')
             self.buffer += data
+            if data:
+                last_activity = time.monotonic()
             if '\n' in self.buffer:
                 datas_left = ''
                 cr_idx = self.buffer.rfind('\n')
@@ -91,6 +102,9 @@ class RecordedDatas:
                     datas_left = self.save_datas(lines)
 
                 self.buffer = datas_left + self.buffer[cr_idx:]
+
+            if timeout is not None and (time.monotonic() - last_activity) > timeout:
+                raise TimeoutError(f"Timeout reached after {timeout} seconds while waiting for serial data")
             # print("buffer : ", self.buffer, "\n")
             # # print("data : ", data, "\n")
             # print("data left length : ", len(datas_left), "\n")
