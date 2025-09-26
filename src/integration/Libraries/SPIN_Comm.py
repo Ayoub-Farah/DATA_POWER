@@ -128,7 +128,20 @@ def SendCommand(SerialObj, action, *args, delay=0.2, verbose = False, send_mes_d
         str: The generated message for the Twist board.
     """
 
-    action_types = ("LEG", "CAPA", "DRIVER", "BUCK", "BOOST", "REFERENCE", "DUTY", "CALIBRATE", "TEST_SENSI")
+    action_types = (
+        "LEG",
+        "CAPA",
+        "DRIVER",
+        "BUCK",
+        "BOOST",
+        "REFERENCE",
+        "DUTY",
+        "CALIBRATE",
+        "TEST_SENSI",
+        "TEST_CHIRP",
+        "TEST_FIXED_FREQ",
+        "TEST_WAVE_STOP",
+    )
 
     # Dictionary mapping actions to their message formats
     message_formats = {
@@ -146,6 +159,23 @@ def SendCommand(SerialObj, action, *args, delay=0.2, verbose = False, send_mes_d
         "DUTY": lambda leg, value: f"s_{leg.upper()}_d_{value:.5f}",
         "CALIBRATE": lambda variable, gain, offset: f"k_{variable.upper()}_g_{gain:.8f}_o_{offset:.8f}",
         "TEST_SENSI": lambda leg, ref: f"t_{leg.upper()}_r_{ref:.1F}",
+        "TEST_CHIRP": (
+            lambda leg,
+                   f_start,
+                   f_end,
+                   duration,
+                   amplitude=0.4,
+                   offset=0.5,
+                   loop=0: (
+                f"t_{leg.upper()}_c_{f_start:.2f}_{f_end:.2f}_{duration:.3f}_{amplitude:.3f}_{offset:.3f}_{int(loop)}"
+            )
+        ),
+        "TEST_FIXED_FREQ": (
+            lambda leg, frequency, amplitude=0.4, offset=0.5: (
+                f"t_{leg.upper()}_f_{frequency:.2f}_{amplitude:.3f}_{offset:.3f}"
+            )
+        ),
+        "TEST_WAVE_STOP": lambda leg: f"t_{leg.upper()}_s",
         }
 
     # Check if action is valid
