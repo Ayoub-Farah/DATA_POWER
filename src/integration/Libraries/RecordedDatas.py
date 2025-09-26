@@ -144,20 +144,49 @@ class RecordedDatas:
     def to_dataFrame(self, filename):
         """Convertit les données enregistrées en DataFrame pandas."""
         with open(filename, "r") as f:
-            file = f.readlines()
-        line1 = file.pop(0)
-        if "#" in file[0] or file[0].startswith(" "):
-            line2 = file.pop(0)
-            idx = int(line2.replace("#", "").strip())
-        else:
-            idx = None
-        datas = np.fromiter(file, dtype=float)
-        names = line1.replace("#", "").split(",")
-        datas = datas.reshape(-1, len(names) - 1)
-        if idx:
+            lines = [line.strip() for line in f.readlines()]
+
+        if not lines:
+            return pd.DataFrame()
+
+        header = lines.pop(0)
+        column_names = [name.strip() for name in header.replace("#", "").split(",") if name.strip()]
+
+        if not column_names:
+            return pd.DataFrame()
+
+        idx = None
+        if lines and lines[0].startswith("#"):
+            try:
+                idx = int(lines.pop(0).replace("#", "").strip())
+            except ValueError:
+                idx = None
+
+        data_values = []
+        for value in lines:
+            if not value or value.startswith("#"):
+                continue
+            if value == "end record":
+                break
+            try:
+                data_values.append(float(value))
+            except ValueError:
+                continue
+
+        if not data_values:
+            return pd.DataFrame(columns=column_names)
+
+        num_columns = len(column_names)
+        usable_length = len(data_values) - (len(data_values) % num_columns)
+        if usable_length <= 0:
+            return pd.DataFrame(columns=column_names)
+
+        datas = np.array(data_values[:usable_length], dtype=float).reshape(-1, num_columns)
+
+        if idx is not None:
             datas = np.roll(datas, -(idx + 1), axis=0)
-        df = pd.DataFrame(datas, columns=names[:-1])
-        return df
+
+        return pd.DataFrame(datas, columns=column_names)
 
     def plot_df(self, df):
         """Tracer le DataFrame avec matplotlib."""
