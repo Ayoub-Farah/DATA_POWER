@@ -1981,10 +1981,19 @@ class FactoryTest:
         chirp_offset = 0.5
         chirp_loop = 0
 
+        debug_enabled = os.environ.get("SIMU_TEST_DEBUG", "0").lower() not in {"0", "false", "no"}
+
+        def debug(message):
+            if debug_enabled:
+                timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                print(f"[simuTest][{timestamp}] {message}")
+
         if not self.recorded_data_DUT.serial_port.is_open:
             self.recorded_data_DUT.serial_port.open()
 
         serial_obj = self.recorded_data_DUT.serial_port
+
+        self.recorded_data_DUT.enable_debug(debug_enabled)
 
         # Change the code test_sensibilite to get value from specified in scope mimicry
         leg = 'LEG1'
@@ -1996,18 +2005,21 @@ class FactoryTest:
                 serial_obj.reset_input_buffer()
             else:
                 serial_obj.flushInput()
+            debug("Serial input buffer cleared")
 
         def rearm_leg():
-            SPIN_Comm.SendCommand(serial_obj, "POWER_ON")
-            SPIN_Comm.SendCommand(serial_obj, "LEG", leg, "ON")
-            SPIN_Comm.SendCommand(serial_obj, "CAPA", leg, "ON")
-            SPIN_Comm.SendCommand(serial_obj, "DRIVER", leg, "ON", delay=3)
+            debug("Rearming leg before scope capture")
+            SPIN_Comm.SendCommand(serial_obj, "POWER_ON", verbose=debug_enabled)
+            SPIN_Comm.SendCommand(serial_obj, "LEG", leg, "ON", verbose=debug_enabled)
+            SPIN_Comm.SendCommand(serial_obj, "CAPA", leg, "ON", verbose=debug_enabled)
+            SPIN_Comm.SendCommand(serial_obj, "DRIVER", leg, "ON", delay=3, verbose=debug_enabled)
 
         def run_scope_sequence(test_label, command_name, *args, delay=0.5, timeout=30.0):
-            print(f"Lancement de {test_label}…")
+            debug(f"Starting {test_label} with timeout={timeout}s")
             rearm_leg()
             clear_input_buffer()
-            SPIN_Comm.SendCommand(serial_obj, command_name, *args, delay=delay)
+            debug(f"Sending command {command_name} with args={args}")
+            SPIN_Comm.SendCommand(serial_obj, command_name, *args, delay=delay, verbose=debug_enabled)
             try:
                 file_path_local = self.recorded_data_DUT.read_serial(timeout=timeout)
             except KeyboardInterrupt:
@@ -2015,32 +2027,42 @@ class FactoryTest:
                 return None
             except TimeoutError as exc:
                 print(f"Timeout pendant {test_label} : {exc}")
+                debug(f"Timeout encountered during {test_label}: {exc}")
                 return None
             print(f"Données enregistrées pour {test_label} : {file_path_local}")
+            debug(f"File captured for {test_label}: {file_path_local}")
             return file_path_local
 
         def load_scope_data(file_path_local, sample_time):
             if not file_path_local:
+                debug("No file path provided to load_scope_data")
                 return {}, np.array([]), 0
 
             filename_csv = file_path_local + '.csv'
             columns_local = {}
 
+            if not os.path.exists(filename_csv):
+                debug(f"CSV file not found: {filename_csv}")
+                return {}, np.array([]), 0
+
             with open(filename_csv, mode='r', encoding='utf-8-sig') as file:
                 reader = csv.DictReader(file)
                 if not reader.fieldnames:
+                    debug(f"CSV file {filename_csv} has no headers")
                     return {}, np.array([]), 0
 
                 for column_name in reader.fieldnames:
                     columns_local[column_name] = []
 
-                for row in reader:
+                for row_index, row in enumerate(reader):
                     for column_name in reader.fieldnames:
                         value = row.get(column_name, "")
                         if value == "" or value is None:
                             columns_local[column_name].append(float('nan'))
                         else:
                             columns_local[column_name].append(float(value))
+                    if debug_enabled and row_index % 250 == 0:
+                        debug(f"Loaded {row_index + 1} rows from {filename_csv}")
 
             record_size_local = len(next(iter(columns_local.values()))) if columns_local else 0
             sim_time_local = record_size_local * sample_time
@@ -2091,6 +2113,7 @@ class FactoryTest:
             )
 
             if sensi_file_path:
+                debug("Sensitivity capture succeeded, triggering chirp")
                 chirp_file_path = run_scope_sequence(
                     "TEST_CHIRP",
                     "TEST_CHIRP",
@@ -2110,7 +2133,9 @@ class FactoryTest:
                     SPIN_Comm.SendCommand(serial_obj, "POWER_OFF", delay=0.5)
                 except Exception as exc:
                     print(f"POWER_OFF command failed: {exc}")
+                    debug(f"POWER_OFF command raised: {exc}")
                 self.recorded_data_DUT.close()
+                debug("Serial port closed after scope sequences")
 
         sensi_columns, sensi_time_values, sensi_record_size = load_scope_data(sensi_file_path, Ts)
 

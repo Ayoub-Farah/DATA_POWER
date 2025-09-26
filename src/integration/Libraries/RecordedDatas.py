@@ -44,24 +44,38 @@ class RecordedDatas:
         self.buffer = ""
         self.message_size = message_size
         self.f = io.StringIO()
+        self.debug_enabled = os.environ.get("RECORDED_DATAS_DEBUG", "0").lower() not in {"0", "false", "no"}
         print("Connection established on", port)
+
+    def enable_debug(self, enabled=True):
+        """Enable or disable verbose debug prints at runtime."""
+        self.debug_enabled = bool(enabled)
+
+    def _debug(self, message):
+        if self.debug_enabled:
+            print(f"[RecordedDatas] {message}")
 
     def read_serial(self, timeout=None):
         """Lire les données du port série et traiter les messages."""
         cpt = 0
         start_time = time.monotonic()
         record_deadline = None
+        self._debug(f"read_serial(timeout={timeout}) called")
         while True:
             if timeout is not None:
                 now = time.monotonic()
                 if record_deadline is not None:
                     if now >= record_deadline:
+                        self._debug("Timeout while receiving payload; resetting capture state")
                         self._reset_capture_state()
                         raise TimeoutError("Timeout while receiving scope payload.")
                 elif now - start_time >= timeout:
+                    self._debug("Timeout waiting for record start; resetting capture state")
                     self._reset_capture_state()
                     raise TimeoutError("Timeout waiting for scope record start.")
             data = self.serial_port.read(self.serial_port.in_waiting or 1).decode('utf-8', errors='replace')
+            if data and self.debug_enabled:
+                self._debug(f"Received chunk ({len(data)} bytes): {repr(data[:80])}{'…' if len(data) > 80 else ''}")
             self.buffer += data
             if '\n' in self.buffer:
                 datas_left = ''
@@ -74,6 +88,7 @@ class RecordedDatas:
                     idx = txt_to_read.find('begin record\r\n')
                     txt_to_read = txt_to_read[idx+self.message_size:]
                     self.state = RECORD
+                    self._debug("'begin record' detected; switching to RECORD state")
                     if timeout is not None:
                         record_deadline = time.monotonic() + timeout
 
@@ -87,6 +102,7 @@ class RecordedDatas:
                     lines = txt_to_read.split("\r\n")
                     datas_left = self.save_datas(lines)
                     self.state = IDLE
+                    self._debug("'end record' detected; returning recorded file path")
                     record_deadline = None
 
 
@@ -98,6 +114,8 @@ class RecordedDatas:
 
                 # Enregistrer les données si en mode RECORD
                 if self.state == RECORD:
+                    if self.debug_enabled:
+                        self._debug(f"Accumulating {len(lines)} lines of record data")
                     lines = txt_to_read.split("\r\n")
                     datas_left = self.save_datas(lines)
 
@@ -137,6 +155,7 @@ class RecordedDatas:
         except Exception:
             pass
         self.f = io.StringIO()
+        self._debug("Capture state reset complete")
 
     def save_to_file(self):
         """Enregistre les données dans un fichier et produit un fichier CSV et PNG."""
