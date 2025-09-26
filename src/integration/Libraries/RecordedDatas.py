@@ -194,6 +194,10 @@ class RecordedDatas:
         """Fermer la connexion série."""
         self.serial_port.close()
 
+    def enable_debug(self, enabled=True):
+        """Activer ou désactiver les messages de debug."""
+        self.debug_enabled = bool(enabled)
+
     def _debug(self, message):
         """Afficher les messages de debug lorsque l'option est activée."""
         if getattr(self, "debug_enabled", False):
