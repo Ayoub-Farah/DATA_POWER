@@ -161,6 +161,9 @@ void setup_routine()
 
     shield.sensors.enableDefaultTwistSensors();
 
+    shield.power.connectCapacitor(LEG1);
+    shield.power.disconnectCapacitor(LEG2);
+
     /* Enable switch control with max and min duty cycle*/
     shield.power.setDutyCycleMax(ALL,1.0);
     shield.power.setDutyCycleMin(ALL,0.0);
@@ -311,11 +314,17 @@ void loop_critical_task()
         }
         pwm_enable = false;
 
-        if (V1_low_value>=2 && !Vsource_ON_once_indicator) // If VDC is ON, starts sequence with small delay
+        if (V1_low_value<2) // If VDC is OFF, sequence can be restarted without uploading again
+        {
+            Vsource_ON_once_indicator = false;
+        }
+
+        if (V1_low_value>=2 && Vsource_ON_once_indicator == false) // If VDC is ON, starts sequence with small delay
         {
             mode = SEQUENCEMODE;
             trigger = true;
             Vsource_ON_once_indicator = true;
+            seq_timer = 0;
         }
     }
     else if (mode == DECHARGEMODE)
