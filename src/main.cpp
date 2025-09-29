@@ -202,6 +202,16 @@ bool a_trigger() {
 
 void dump_scope_datas(ScopeMimicry &scope)  {
     task.suspendBackgroundMs(1000);
+
+    if (!scope.has_trigged()) {
+        printk("warning: no fresh scope capture available, aborting dump\n");
+        return;
+    }
+
+    scope.reset_dump();
+    buffer_scope = scope.get_buffer();
+    buffer_size = scope.get_buffer_size() >> 2;
+
     printk("begin record\n");
     printk("#");
     for (uint16_t k=0;k < scope.get_nb_channel(); k++) {
@@ -209,14 +219,12 @@ void dump_scope_datas(ScopeMimicry &scope)  {
     }
     printk("\n");
     printk("# %d\n", scope.get_final_idx());
-    
-    
-    
+
     for (uint16_t k=0;k < buffer_size; k++) {
-        printk("%08x\n", *((uint32_t *)buffer_scope));  
+        printk("%08x\n", *((uint32_t *)buffer_scope));
         buffer_scope += sizeof(uint32_t);
         task.suspendBackgroundUs(100);
-        
+
     }
     printk("end record\n");
 }
@@ -410,7 +418,6 @@ static void run_sensitivity_sequence(void)
 
     scope.acquire();
     a_trigger();
-    scope.has_trigged();
 
     if (dc_open_cycle) {
         if (test_leg == LEG1) {
@@ -496,7 +503,6 @@ static void run_chirp_sequence(void)
 
     scope.acquire();
     a_trigger();
-    scope.has_trigged();
 
     float32_t w0 = 2.0F * PI * wave_frequency_hz;
     wave_theta = ot_modulo_2pi(wave_theta + w0 * Ts);
@@ -535,7 +541,6 @@ static void run_fixed_frequency_sequence(void)
 
     scope.acquire();
     a_trigger();
-    scope.has_trigged();
 
     float32_t w0 = 2.0F * PI * wave_frequency_hz;
     wave_theta = ot_modulo_2pi(wave_theta + w0 * Ts);
