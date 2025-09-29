@@ -141,6 +141,8 @@ static bool scope_capture_ready = false;
 static bool scope_waiting_for_trigger = false;
 static uint32_t scope_capture_counter = 0;
 static uint32_t scope_dumped_counter = 0;
+static bool scope_dump_pending = false;      // true when the host expects a fresh scope dump
+static uint32_t scope_expected_capture_counter = 0U; // next capture index we are waiting for
 
 static float32_t local_analog_value=0;
 
@@ -175,6 +177,8 @@ void scope_prepare_for_new_test(void)
 
     scope_capture_ready = false;
     scope_waiting_for_trigger = true;
+    scope_dump_pending = true;
+    scope_expected_capture_counter = scope_capture_counter + 1U;
 }
 test_profile_t current_test_profile = TEST_PROFILE_NONE;
 bool waveform_stop_requested = false;
@@ -444,6 +448,7 @@ static void stop_all_tests(bool request_dump)
     }
 
     scope_waiting_for_trigger = false;
+    scope_expected_capture_counter = scope_capture_counter;
     mode = IDLE;
 }
 
@@ -529,7 +534,8 @@ static void run_sensitivity_sequence(void)
     cpt++;
 
     if (cpt >= 1000) {
-        stop_all_tests(true);
+        waveform_stop_requested = true;
+        return;
     }
 }
 
@@ -562,7 +568,7 @@ static void run_chirp_sequence(void)
                 chirp_elapsed_s = 0.0F;
                 wave_frequency_hz = chirp_start_frequency;
             } else {
-                stop_all_tests(true);
+                waveform_stop_requested = true;
                 return;
             }
         } else {
@@ -642,8 +648,28 @@ void loop_control_task()
         I_high_value = meas_data;
 
     if (waveform_stop_requested) {
-        bool request_dump = is_test_performing;
+        bool capture_ready = true;
+
+        if (scope_dump_pending) {
+            if (enable_acq) {
+                scope.acquire();
+                a_trigger();
+                refresh_scope_trigger_state();
+            }
+
+            capture_ready = scope_capture_ready &&
+                            (scope_capture_counter != scope_dumped_counter) &&
+                            (scope_capture_counter >= scope_expected_capture_counter);
+
+            if (!capture_ready) {
+                return;
+            }
+        }
+
+        bool request_dump = scope_dump_pending && capture_ready;
         stop_all_tests(request_dump);
+        scope_dump_pending = false;
+        return;
     }
 
     if (test_leg == LEG1) {
