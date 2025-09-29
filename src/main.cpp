@@ -138,6 +138,7 @@ static uint32_t print_counter = 0;
 static float32_t local_analog_value=0;
 
 bool enable_test_leg = false;
+static bool scope_armed_for_test = false;
 
 void scope_prepare_for_new_test(void)
 {
@@ -156,6 +157,7 @@ void scope_prepare_for_new_test(void)
      */
     scope.reset_dump();
     scope.has_trigged();
+    scope_armed_for_test = true;
 
     /* Re-enable the trigger gate right away. On the next control-loop
      * iteration the acquisition function will observe enable_acq = true and
@@ -375,6 +377,7 @@ static void stop_all_tests(bool request_dump)
     current_test_profile = TEST_PROFILE_NONE;
     dc_open_cycle = false;
     enable_test_leg = false;
+    scope_armed_for_test = false;
     chirp_elapsed_s = 0.0F;
     chirp_loop_enabled = false;
     wave_theta = 0.0F;
@@ -403,16 +406,17 @@ static void stop_all_tests(bool request_dump)
 
 static void run_sensitivity_sequence(void)
 {
+    if (scope_armed_for_test) {
+        scope.acquire();
+        scope_armed_for_test = false;
+    }
+
     if (!enable_test_leg) {
         shield.power.start(test_leg);
         enable_test_leg = true;
         duty_cycle = lower_bound;
         shield.power.setDutyCycle(test_leg, duty_cycle);
     }
-
-    scope.acquire();
-    a_trigger();
-    scope.has_trigged();
 
     if (dc_open_cycle) {
         if (test_leg == LEG1) {
@@ -489,16 +493,17 @@ static void run_sensitivity_sequence(void)
 
 static void run_chirp_sequence(void)
 {
+    if (scope_armed_for_test) {
+        scope.acquire();
+        scope_armed_for_test = false;
+    }
+
     if (!enable_test_leg) {
         shield.power.start(test_leg);
         enable_test_leg = true;
         duty_cycle = starting_duty_cycle;
         shield.power.setDutyCycle(test_leg, duty_cycle);
     }
-
-    scope.acquire();
-    a_trigger();
-    scope.has_trigged();
 
     float32_t w0 = 2.0F * PI * wave_frequency_hz;
     wave_theta = ot_modulo_2pi(wave_theta + w0 * Ts);
@@ -528,16 +533,17 @@ static void run_chirp_sequence(void)
 
 static void run_fixed_frequency_sequence(void)
 {
+    if (scope_armed_for_test) {
+        scope.acquire();
+        scope_armed_for_test = false;
+    }
+
     if (!enable_test_leg) {
         shield.power.start(test_leg);
         enable_test_leg = true;
         duty_cycle = starting_duty_cycle;
         shield.power.setDutyCycle(test_leg, duty_cycle);
     }
-
-    scope.acquire();
-    a_trigger();
-    scope.has_trigged();
 
     float32_t w0 = 2.0F * PI * wave_frequency_hz;
     wave_theta = ot_modulo_2pi(wave_theta + w0 * Ts);
