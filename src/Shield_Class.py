@@ -119,40 +119,19 @@ class Shield_Device:
         return tuple(self.shield_message_index.keys())
 
 
-    def sendMessage(self,Message):
-        """
-        Send a message via serial communication.
+    def sendMessage(self, Message):
+        """Transmit *Message* over the shield serial link in one burst."""
 
-        Args:
-            SerialObj: The serial object used for communication.
-            Message (str): The message to be sent.
+        if not Message:
+            return
 
-        Returns:
-            None
-        """
-        # Define the chunk size
-        chunk_size = 10
+        if Message.endswith("\r") or Message.endswith("\n"):
+            payload = Message.encode("utf-8")
+        else:
+            payload = (Message + "\r\n").encode("utf-8")
 
-        # Calculate the number of chunks
-        num_chunks = (len(Message) + chunk_size - 1) // chunk_size
-
-        # Send each chunk
-        for i in range(num_chunks):
-            # Calculate the start and end indices for the current chunk
-            start_index = i * chunk_size
-            end_index = min((i + 1) * chunk_size, len(Message))
-
-            # Extract the current chunk
-            chunk = Message[start_index:end_index]
-
-            # Send the chunk via serial
-            self.shield_serialObj.write(chunk.encode('utf-8'))
-
-            # Wait for a short period
-            time.sleep(0.1)
-
-        # Send the end of line
-        self.shield_serialObj.write(b'\r\n')
+        self.shield_serialObj.write(payload)
+        self.shield_serialObj.flush()
 
 
     def wait_for_scope_record(self, timeout=20.0):
