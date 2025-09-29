@@ -55,6 +55,7 @@ static void run_chirp_sequence(void);
 static void run_fixed_frequency_sequence(void);
 static void stop_all_tests(bool request_dump);
 static float32_t clamp_duty_cycle(float32_t value);
+static void scope_update_acquisition_state(void);
 
 
 //--------------USER VARIABLES DECLARATIONS----------------------
@@ -138,6 +139,7 @@ static uint32_t print_counter = 0;
 static float32_t local_analog_value=0;
 
 bool enable_test_leg = false;
+static bool scope_capture_complete = false;
 
 void scope_prepare_for_new_test(void)
 {
@@ -149,6 +151,12 @@ void scope_prepare_for_new_test(void)
      */
     enable_acq = false;
 
+    /* Clear the internal trigger latch so the next acquisition starts from a
+     * fresh state. Without this call the scope would consider itself still
+     * busy with the previous capture and immediately report completion.
+     */
+    scope.start();
+
     /* Reset the dump cursor and clear the "already triggered" flag so the
      * Python host receives a fresh record whose sample zero corresponds to
      * the beginning of the upcoming automated test. Calling has_trigged()
@@ -157,11 +165,23 @@ void scope_prepare_for_new_test(void)
     scope.reset_dump();
     scope.has_trigged();
 
+    scope_capture_complete = false;
+    waveform_stop_requested = false;
+
     /* Re-enable the trigger gate right away. On the next control-loop
      * iteration the acquisition function will observe enable_acq = true and
      * start writing the newly generated waveform from sample index zero.
      */
     enable_acq = true;
+}
+
+static void scope_update_acquisition_state(void)
+{
+    uint16_t acquisition_status = scope.acquire();
+
+    if (acquisition_status == 2U) {
+        scope_capture_complete = true;
+    }
 }
 test_profile_t current_test_profile = TEST_PROFILE_NONE;
 bool waveform_stop_requested = false;
@@ -366,6 +386,7 @@ static void stop_all_tests(bool request_dump)
     }
 
     enable_acq = false;
+    scope_capture_complete = false;
     waveform_stop_requested = false;
     is_test_performing = false;
     current_test_profile = TEST_PROFILE_NONE;
@@ -408,9 +429,11 @@ static void run_sensitivity_sequence(void)
         shield.power.setDutyCycle(test_leg, duty_cycle);
     }
 
-    scope.acquire();
-    a_trigger();
-    scope.has_trigged();
+    scope_update_acquisition_state();
+
+    if (waveform_stop_requested) {
+        return;
+    }
 
     if (dc_open_cycle) {
         if (test_leg == LEG1) {
@@ -480,8 +503,8 @@ static void run_sensitivity_sequence(void)
     shield.power.setTriggerValue(test_leg, trig_ratio);
     cpt++;
 
-    if (cpt >= 1000) {
-        stop_all_tests(true);
+    if (!waveform_stop_requested && (cpt >= 1000)) {
+        waveform_stop_requested = true;
     }
 }
 
@@ -494,9 +517,11 @@ static void run_chirp_sequence(void)
         shield.power.setDutyCycle(test_leg, duty_cycle);
     }
 
-    scope.acquire();
-    a_trigger();
-    scope.has_trigged();
+    scope_update_acquisition_state();
+
+    if (waveform_stop_requested) {
+        return;
+    }
 
     float32_t w0 = 2.0F * PI * wave_frequency_hz;
     wave_theta = ot_modulo_2pi(wave_theta + w0 * Ts);
@@ -514,7 +539,7 @@ static void run_chirp_sequence(void)
                 chirp_elapsed_s = 0.0F;
                 wave_frequency_hz = chirp_start_frequency;
             } else {
-                stop_all_tests(true);
+                waveform_stop_requested = true;
                 return;
             }
         } else {
@@ -533,9 +558,11 @@ static void run_fixed_frequency_sequence(void)
         shield.power.setDutyCycle(test_leg, duty_cycle);
     }
 
-    scope.acquire();
-    a_trigger();
-    scope.has_trigged();
+    scope_update_acquisition_state();
+
+    if (waveform_stop_requested) {
+        return;
+    }
 
     float32_t w0 = 2.0F * PI * wave_frequency_hz;
     wave_theta = ot_modulo_2pi(wave_theta + w0 * Ts);
@@ -569,8 +596,8 @@ void loop_control_task()
     if (meas_data != NO_VALUE)
         I_high_value = meas_data;
 
-    if (waveform_stop_requested) {
-        bool request_dump = is_test_performing;
+    if (waveform_stop_requested && (!is_test_performing || scope_capture_complete)) {
+        bool request_dump = is_test_performing && scope_capture_complete;
         stop_all_tests(request_dump);
     }
 
