@@ -56,6 +56,7 @@ static void run_fixed_frequency_sequence(void);
 static void stop_all_tests(bool request_dump);
 static float32_t clamp_duty_cycle(float32_t value);
 static void refresh_scope_trigger_state(void);
+static void update_control_task_heartbeat(void);
 
 
 //--------------USER VARIABLES DECLARATIONS----------------------
@@ -144,6 +145,9 @@ static uint32_t scope_dumped_counter = 0;
 static float32_t local_analog_value=0;
 
 bool enable_test_leg = false;
+
+static const uint32_t CONTROL_TASK_HEARTBEAT_PERIOD_US = 2000000U;
+static const bool control_task_led_heartbeat_active = true;
 
 void scope_prepare_for_new_test(void)
 {
@@ -331,14 +335,18 @@ void loop_application_task()
             // printk("% 7.2f:", (double)V_high_value);
             // printk("% 7.2f\n", (double)V1_low_value);
             }
-            spin.led.turnOff();
+            if (!control_task_led_heartbeat_active) {
+                spin.led.turnOff();
+            }
             if(!print_done) {
                 printk("IDLE \n");
                 print_done = true;
             }
             break;
         case POWER_OFF:  // POWER_OFF MODE - turns the power off but broadcasts the system state data
-            spin.led.toggle();
+            if (!control_task_led_heartbeat_active) {
+                spin.led.toggle();
+            }
             if(!print_done) {
                 printk("POWER OFF \n");
                 print_done = true;
@@ -346,8 +354,10 @@ void loop_application_task()
             frame_POWER_OFF();
             break;
         case POWER_ON:   // POWER_ON MODE - turns the system on and broadcasts measurement from the physical variables
-            spin.led.turnOn();
-            
+            if (!control_task_led_heartbeat_active) {
+                spin.led.turnOn();
+            }
+
             shield.sensors.triggerTwistTempMeas(TEMP_SENSOR_1);
             shield.sensors.triggerTwistTempMeas(TEMP_SENSOR_2);
     
@@ -585,11 +595,35 @@ static void run_fixed_frequency_sequence(void)
     shield.power.setDutyCycle(test_leg, duty_cycle);
 }
 
+static void update_control_task_heartbeat(void)
+{
+    if (!control_task_led_heartbeat_active) {
+        return;
+    }
+
+    static uint32_t heartbeat_counter = 0U;
+    static uint32_t heartbeat_ticks = 0U;
+
+    if (heartbeat_ticks == 0U) {
+        uint32_t ticks = CONTROL_TASK_HEARTBEAT_PERIOD_US / control_task_period;
+        if (ticks == 0U) {
+            ticks = 1U;
+        }
+        heartbeat_ticks = ticks;
+    }
+
+    heartbeat_counter++;
+    if (heartbeat_counter >= heartbeat_ticks) {
+        spin.led.toggle();
+        heartbeat_counter = 0U;
+    }
+}
+
 void loop_control_task()
 {
     // shield.sensors.getValues
     // ------------- GET SENSOR MEASUREMENTS ---------------------
-    
+    update_control_task_heartbeat();
 
     meas_data = shield.sensors.getLatestValue(V_HIGH);
     if (meas_data != NO_VALUE)
