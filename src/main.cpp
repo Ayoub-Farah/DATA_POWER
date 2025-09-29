@@ -193,8 +193,9 @@ enum serial_interface_menu_mode // LIST OF POSSIBLE MODES FOR THE OWNTECH CONVER
 };
 
 uint8_t mode_scope = IDLEMODE;
-uint8_t *buffer_scope = scope.get_buffer();
-uint16_t buffer_size = scope.get_buffer_size() >> 2; // we divide by 4 (4 bytes per float data)
+// The scope buffer is dumped on-demand when the host script asks for it.  To
+// avoid streaming stale data we always grab a fresh pointer to the beginning of
+// the circular buffer right before we start printing the record contents.
 // trigger function for scope manager
 bool a_trigger() {
     return enable_acq;
@@ -209,14 +210,17 @@ void dump_scope_datas(ScopeMimicry &scope)  {
     }
     printk("\n");
     printk("# %d\n", scope.get_final_idx());
-    
-    
-    
+
+
+
+    uint8_t *buffer_scope = scope.get_buffer();
+    uint16_t buffer_size = scope.get_buffer_size() >> 2; // 4 bytes per float
+
     for (uint16_t k=0;k < buffer_size; k++) {
-        printk("%08x\n", *((uint32_t *)buffer_scope));  
+        printk("%08x\n", *((uint32_t *)buffer_scope));
         buffer_scope += sizeof(uint32_t);
         task.suspendBackgroundUs(100);
-        
+
     }
     printk("end record\n");
 }
@@ -380,8 +384,6 @@ static void stop_all_tests(bool request_dump)
     power_leg_settings[test_leg].duty_cycle = duty_cycle;
     shield.power.setDutyCycle(test_leg, duty_cycle);
     shield.power.stop(test_leg);
-    buffer_scope = scope.get_buffer();
-    buffer_size = scope.get_buffer_size() >> 2;
 
     if (test_leg == LEG1) {
         pid1.reset();
