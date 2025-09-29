@@ -159,11 +159,11 @@ void scope_prepare_for_new_test(void)
     scope.has_trigged();
     scope_armed_for_test = true;
 
-    /* Re-enable the trigger gate right away. On the next control-loop
-     * iteration the acquisition function will observe enable_acq = true and
-     * start writing the newly generated waveform from sample index zero.
+    /* The control task will re-open the trigger gate at the exact moment it
+     * starts the new excitation so the capture begins with the very first
+     * waveform sample instead of recording residual values from the previous
+     * test.
      */
-    enable_acq = true;
 }
 test_profile_t current_test_profile = TEST_PROFILE_NONE;
 bool waveform_stop_requested = false;
@@ -425,6 +425,7 @@ static void run_sensitivity_sequence(void)
     if (scope_armed_for_test) {
         scope.acquire();
         scope_armed_for_test = false;
+        enable_acq = true;
     }
 
     if (!enable_test_leg) {
@@ -512,6 +513,7 @@ static void run_chirp_sequence(void)
     if (scope_armed_for_test) {
         scope.acquire();
         scope_armed_for_test = false;
+        enable_acq = true;
     }
 
     if (!enable_test_leg) {
@@ -552,6 +554,7 @@ static void run_fixed_frequency_sequence(void)
     if (scope_armed_for_test) {
         scope.acquire();
         scope_armed_for_test = false;
+        enable_acq = true;
     }
 
     if (!enable_test_leg) {
