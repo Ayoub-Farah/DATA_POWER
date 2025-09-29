@@ -204,6 +204,32 @@ bool a_trigger() {
 }
 
 void dump_scope_datas(ScopeMimicry &scope)  {
+    bool triggered = false;
+
+    /*
+     * ``has_trigged()`` clears the internal latch once it reports ``true``.
+     * Poll the scope until the most recent acquisition completes so the host
+     * script never receives a stale buffer.
+     */
+    for (uint8_t attempt = 0U; attempt < 100U; ++attempt) {
+        if (scope.has_trigged()) {
+            triggered = true;
+            break;
+        }
+
+        task.suspendBackgroundMs(10);
+    }
+
+    if (!triggered) {
+        printk("scope dump requested before trigger ready\n");
+        return;
+    }
+
+    /* Restart the dump cursor from sample zero of the freshly triggered
+     * record before streaming the payload.
+     */
+    scope.reset_dump();
+
     task.suspendBackgroundMs(1000);
     printk("begin record\n");
     printk("#");
@@ -213,8 +239,6 @@ void dump_scope_datas(ScopeMimicry &scope)  {
     printk("\n");
     printk("# %d\n", scope.get_final_idx());
 
-
-
     uint8_t *buffer_scope = scope.get_buffer();
     uint16_t buffer_size = scope.get_buffer_size() >> 2; // 4 bytes per float
 
@@ -222,7 +246,6 @@ void dump_scope_datas(ScopeMimicry &scope)  {
         printk("%08x\n", *((uint32_t *)buffer_scope));
         buffer_scope += sizeof(uint32_t);
         task.suspendBackgroundUs(100);
-
     }
     printk("end record\n");
 }
@@ -305,13 +328,6 @@ void loop_application_task()
             if (is_downloading) {
                 dump_scope_datas(scope);
                 is_downloading = false;
-            } else {
-            scope.has_trigged();
-            // printk("% 7d:", scope.has_trigged());
-            // printk("% 7.2f:", (double)duty_cycle);
-            // printk("% 7d:", num_trig_ratio_point);
-            // printk("% 7.2f:", (double)V_high_value);
-            // printk("% 7.2f\n", (double)V1_low_value);
             }
             spin.led.turnOff();
             if(!print_done) {
