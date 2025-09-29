@@ -221,10 +221,12 @@ void initial_handle(uint8_t received_char)
             console_read_line();
             printk("buffer str = %s\n", bufferstr);
             scopeHandler();
+            break;
         case 't': // 't' for sensibility test
             console_read_line();
             printk("buffer str = %s\n", bufferstr);
             testSensiHandler();
+            break;
         // case 'r':
         //     is_downloading = true;
         //     break;
@@ -688,10 +690,8 @@ void scopeHandler()
             action = scope_commands[i].action;
             if (action == ENABLE_ACQUISITION) {
                 enable_acq = !(enable_acq);
-                printk("abble");
             } else if (action == READ_SCOPE) {
                 is_downloading = true;
-                printk("action");
             }
             print_done = false; //authorizes printing the current state once
             return;
