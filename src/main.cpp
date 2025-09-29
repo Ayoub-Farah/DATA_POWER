@@ -139,6 +139,7 @@ static float32_t local_analog_value=0;
 
 bool enable_test_leg = false;
 static bool scope_armed_for_test = false;
+static bool scope_capture_ready = false;
 
 void scope_prepare_for_new_test(void)
 {
@@ -157,6 +158,7 @@ void scope_prepare_for_new_test(void)
      */
     scope.reset_dump();
     scope.has_trigged();
+    scope_capture_ready = false;
     scope_armed_for_test = true;
 
     /* The control task will re-open the trigger gate at the exact moment it
@@ -204,20 +206,23 @@ bool a_trigger() {
 }
 
 void dump_scope_datas(ScopeMimicry &scope)  {
-    bool triggered = false;
+    bool triggered = scope_capture_ready;
 
-    /*
-     * ``has_trigged()`` clears the internal latch once it reports ``true``.
-     * Poll the scope until the most recent acquisition completes so the host
-     * script never receives a stale buffer.
-     */
-    for (uint8_t attempt = 0U; attempt < 100U; ++attempt) {
-        if (scope.has_trigged()) {
-            triggered = true;
-            break;
+    if (!triggered) {
+        /*
+         * ``has_trigged()`` clears the internal latch once it reports ``true``.
+         * Poll the scope until the most recent acquisition completes so the
+         * host script never receives a stale buffer.
+         */
+        for (uint8_t attempt = 0U; attempt < 100U; ++attempt) {
+            if (scope.has_trigged()) {
+                triggered = true;
+                scope_capture_ready = true;
+                break;
+            }
+
+            task.suspendBackgroundMs(10);
         }
-
-        task.suspendBackgroundMs(10);
     }
 
     if (!triggered) {
@@ -229,6 +234,7 @@ void dump_scope_datas(ScopeMimicry &scope)  {
      * record before streaming the payload.
      */
     scope.reset_dump();
+    scope_capture_ready = false;
 
     task.suspendBackgroundMs(1000);
     printk("begin record\n");
@@ -383,8 +389,10 @@ static float32_t clamp_duty_cycle(float32_t value)
 
 static void stop_all_tests(bool request_dump)
 {
-    if (request_dump) {
+    if (request_dump && scope_capture_ready) {
         is_downloading = true;
+    } else if (request_dump) {
+        printk("scope dump requested but capture not ready\n");
     }
 
     enable_acq = false;
@@ -394,6 +402,9 @@ static void stop_all_tests(bool request_dump)
     dc_open_cycle = false;
     enable_test_leg = false;
     scope_armed_for_test = false;
+    if (!request_dump) {
+        scope_capture_ready = false;
+    }
     chirp_elapsed_s = 0.0F;
     chirp_loop_enabled = false;
     wave_theta = 0.0F;
@@ -425,6 +436,7 @@ static void run_sensitivity_sequence(void)
     if (scope_armed_for_test) {
         scope.acquire();
         scope_armed_for_test = false;
+        scope_capture_ready = false;
         enable_acq = true;
     }
 
@@ -504,6 +516,13 @@ static void run_sensitivity_sequence(void)
     cpt++;
 
     if (cpt >= 1000) {
+        if (!scope_capture_ready) {
+            if (!scope.has_trigged()) {
+                return;
+            }
+            scope_capture_ready = true;
+        }
+
         stop_all_tests(true);
     }
 }
@@ -513,6 +532,7 @@ static void run_chirp_sequence(void)
     if (scope_armed_for_test) {
         scope.acquire();
         scope_armed_for_test = false;
+        scope_capture_ready = false;
         enable_acq = true;
     }
 
@@ -539,6 +559,12 @@ static void run_chirp_sequence(void)
                 chirp_elapsed_s = 0.0F;
                 wave_frequency_hz = chirp_start_frequency;
             } else {
+                if (!scope_capture_ready) {
+                    if (!scope.has_trigged()) {
+                        return;
+                    }
+                    scope_capture_ready = true;
+                }
                 stop_all_tests(true);
                 return;
             }
@@ -554,6 +580,7 @@ static void run_fixed_frequency_sequence(void)
     if (scope_armed_for_test) {
         scope.acquire();
         scope_armed_for_test = false;
+        scope_capture_ready = false;
         enable_acq = true;
     }
 
@@ -598,7 +625,18 @@ void loop_control_task()
 
     if (waveform_stop_requested) {
         bool request_dump = is_test_performing;
-        stop_all_tests(request_dump);
+
+        if (request_dump && !scope_capture_ready) {
+            if (scope.has_trigged()) {
+                scope_capture_ready = true;
+            }
+        }
+
+        if (request_dump && scope_capture_ready) {
+            stop_all_tests(true);
+        } else if (!request_dump) {
+            stop_all_tests(false);
+        }
     }
 
     if (test_leg == LEG1) {
