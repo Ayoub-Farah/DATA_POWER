@@ -38,7 +38,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import find_devices
 
@@ -161,19 +161,53 @@ def persist_record(test_name: str, record: dict) -> None:
     print(f"  Enregistrements sauvegardés dans {csv_path} et {raw_path}.")
 
 
+_last_scope_signature: Optional[Tuple[Optional[int], Tuple[str, ...]]] = None
+
+
 def capture_scope(shield: Shield_Device, timeout: float) -> dict:
     """Attend l'enregistrement du scope et retourne sa structure décodée."""
 
-    try:
-        record = shield.wait_for_scope_record(timeout=timeout)
-    except TimeoutError as exc:
-        print(f"  ⚠️  Timeout pendant la récupération du scope : {exc}")
-        return {"columns": (), "samples": (), "raw": ()}
-    except RuntimeError as exc:
-        print(f"  ⚠️  Erreur lors du décodage du scope : {exc}")
-        return {"columns": (), "samples": (), "raw": ()}
+    global _last_scope_signature
 
-    return record
+    deadline = time.time() + timeout
+    stale_record: Optional[dict] = None
+
+    while True:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            break
+
+        try:
+            record = shield.wait_for_scope_record(timeout=remaining)
+        except TimeoutError as exc:
+            print(f"  ⚠️  Timeout pendant la récupération du scope : {exc}")
+            break
+        except RuntimeError as exc:
+            print(f"  ⚠️  Erreur lors du décodage du scope : {exc}")
+            break
+
+        signature = (
+            record.get("index"),
+            tuple(record.get("raw", ())),
+        )
+
+        if _last_scope_signature is not None and signature == _last_scope_signature:
+            stale_record = record
+            print(
+                "  ⚠️  Enregistrement identique au précédent reçu, attente d'un nouveau dump…"
+            )
+            # Boucle pour attendre un nouveau record tant qu'il reste du temps.
+            continue
+
+        _last_scope_signature = signature
+        return record
+
+    if stale_record is not None:
+        print(
+            "  ⚠️  Aucun nouveau dump reçu avant expiration du délai, abandon de l'enregistrement périmé."
+        )
+
+    return {"columns": (), "samples": (), "raw": ()}
 
 
 def run_sensitivity_test(shield: Shield_Device, leg: str, vref: float) -> None:

@@ -55,6 +55,7 @@ static void run_chirp_sequence(void);
 static void run_fixed_frequency_sequence(void);
 static void stop_all_tests(bool request_dump);
 static float32_t clamp_duty_cycle(float32_t value);
+static void refresh_scope_trigger_state(void);
 
 
 //--------------USER VARIABLES DECLARATIONS----------------------
@@ -135,6 +136,11 @@ bool dc_open_cycle = false;
 static uint32_t counter = 0;
 static uint32_t print_counter = 0;
 
+static bool scope_capture_ready = false;
+static bool scope_waiting_for_trigger = false;
+static uint32_t scope_capture_counter = 0;
+static uint32_t scope_dumped_counter = 0;
+
 static float32_t local_analog_value=0;
 
 bool enable_test_leg = false;
@@ -162,6 +168,9 @@ void scope_prepare_for_new_test(void)
      * start writing the newly generated waveform from sample index zero.
      */
     enable_acq = true;
+
+    scope_capture_ready = false;
+    scope_waiting_for_trigger = true;
 }
 test_profile_t current_test_profile = TEST_PROFILE_NONE;
 bool waveform_stop_requested = false;
@@ -200,6 +209,19 @@ bool a_trigger() {
     return enable_acq;
 }
 
+static void refresh_scope_trigger_state(void)
+{
+    if (!scope_waiting_for_trigger) {
+        return;
+    }
+
+    if (scope.has_trigged()) {
+        scope_waiting_for_trigger = false;
+        scope_capture_ready = true;
+        scope_capture_counter++;
+    }
+}
+
 void dump_scope_datas(ScopeMimicry &scope)  {
     task.suspendBackgroundMs(1000);
     printk("begin record\n");
@@ -219,6 +241,8 @@ void dump_scope_datas(ScopeMimicry &scope)  {
         
     }
     printk("end record\n");
+
+    scope_capture_ready = false;
 }
 
 
@@ -300,8 +324,8 @@ void loop_application_task()
                 dump_scope_datas(scope);
                 is_downloading = false;
             } else {
-            scope.has_trigged();
-            // printk("% 7d:", scope.has_trigged());
+            refresh_scope_trigger_state();
+            // printk("% 7d:", scope_capture_counter);
             // printk("% 7.2f:", (double)duty_cycle);
             // printk("% 7d:", num_trig_ratio_point);
             // printk("% 7.2f:", (double)V_high_value);
@@ -361,8 +385,18 @@ static float32_t clamp_duty_cycle(float32_t value)
 
 static void stop_all_tests(bool request_dump)
 {
+    refresh_scope_trigger_state();
+
+    bool capture_ready_to_stream = false;
     if (request_dump) {
-        is_downloading = true;
+        if (scope_capture_ready && scope_capture_counter != scope_dumped_counter) {
+            capture_ready_to_stream = true;
+            scope_dumped_counter = scope_capture_counter;
+            buffer_scope = scope.get_buffer();
+            buffer_size = scope.get_buffer_size() >> 2;
+        } else {
+            printk("No fresh scope capture available, skipping dump\n");
+        }
     }
 
     enable_acq = false;
@@ -380,8 +414,6 @@ static void stop_all_tests(bool request_dump)
     power_leg_settings[test_leg].duty_cycle = duty_cycle;
     shield.power.setDutyCycle(test_leg, duty_cycle);
     shield.power.stop(test_leg);
-    buffer_scope = scope.get_buffer();
-    buffer_size = scope.get_buffer_size() >> 2;
 
     if (test_leg == LEG1) {
         pid1.reset();
@@ -396,6 +428,12 @@ static void stop_all_tests(bool request_dump)
     }
 #endif
 
+    if (capture_ready_to_stream) {
+        scope_capture_ready = false;
+        is_downloading = true;
+    }
+
+    scope_waiting_for_trigger = false;
     mode = IDLE;
 }
 
@@ -410,7 +448,7 @@ static void run_sensitivity_sequence(void)
 
     scope.acquire();
     a_trigger();
-    scope.has_trigged();
+    refresh_scope_trigger_state();
 
     if (dc_open_cycle) {
         if (test_leg == LEG1) {
@@ -496,7 +534,7 @@ static void run_chirp_sequence(void)
 
     scope.acquire();
     a_trigger();
-    scope.has_trigged();
+    refresh_scope_trigger_state();
 
     float32_t w0 = 2.0F * PI * wave_frequency_hz;
     wave_theta = ot_modulo_2pi(wave_theta + w0 * Ts);
@@ -535,7 +573,7 @@ static void run_fixed_frequency_sequence(void)
 
     scope.acquire();
     a_trigger();
-    scope.has_trigged();
+    refresh_scope_trigger_state();
 
     float32_t w0 = 2.0F * PI * wave_frequency_hz;
     wave_theta = ot_modulo_2pi(wave_theta + w0 * Ts);
