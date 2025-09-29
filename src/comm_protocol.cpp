@@ -310,23 +310,36 @@ void console_read_line()
     received_char = '\0';
 
     size_t index = 0U;
+
     while (true) {
-        uint8_t ch = console_getchar();
+        int ch = console_getchar();
+
+        if (ch < 0) {
+            k_sleep(K_USEC(100));
+            continue;
+        }
 
         if (ch == '\r') {
             continue;
         }
 
         if (ch == '\n') {
+            if (index == 0U) {
+                /* Ignore stray empty lines that could be left in the RX FIFO. */
+                continue;
+            }
+
             received_char = '\n';
             break;
         }
 
-        received_char = ch;
+        received_char = (uint8_t)ch;
         if (index < sizeof(bufferstr) - 1U) {
             bufferstr[index++] = (char)ch;
         }
     }
+
+    bufferstr[index] = '\0';
 }
 
 void dutyHandler(uint8_t power_leg, uint8_t setting_position) {
@@ -668,7 +681,7 @@ void defaultHandler()
 
 void scopeHandler()
 {
-    for(uint8_t i = 0; i < num_default_commands; i++) //iterates the default commands
+    for(uint8_t i = 0; i < num_scope_commands; i++) //iterates the scope commands
     {
         if (strncmp(bufferstr, scope_commands[i].cmd, strlen(scope_commands[i].cmd)) == 0)
         {
