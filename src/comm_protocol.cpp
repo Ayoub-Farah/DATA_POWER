@@ -306,23 +306,25 @@ void frame_POWER_ON()
 
 void console_read_line()
 {
-    for (uint8_t i = 0; received_char != '\n'; i++)
-    {
-        received_char = console_getchar();
-        if (received_char == '\n')
-        {
-            if (bufferstr[i-1] == '\r')
-            {
-                bufferstr[i-1] = '\0';
-            }
-            else
-            {
-                bufferstr[i] = '\0';
-            }
+    memset(bufferstr, 0, sizeof(bufferstr));
+    received_char = '\0';
+
+    size_t index = 0U;
+    while (true) {
+        uint8_t ch = console_getchar();
+
+        if (ch == '\r') {
+            continue;
         }
-        else
-        {
-            bufferstr[i] = received_char;
+
+        if (ch == '\n') {
+            received_char = '\n';
+            break;
+        }
+
+        received_char = ch;
+        if (index < sizeof(bufferstr) - 1U) {
+            bufferstr[index++] = (char)ch;
         }
     }
 }
