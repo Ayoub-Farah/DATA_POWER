@@ -110,8 +110,7 @@ static bool Vsource_ON_once_indicator = false;
 enum serial_interface_menu_mode
 {
     IDLEMODE = 0,
-    DECHARGEMODE = 1,
-    SEQUENCEMODE = 2,
+    POWERMODE = 1,
 };
 
 uint8_t mode = IDLEMODE;
@@ -161,7 +160,7 @@ void setup_routine()
 
     shield.sensors.enableDefaultTwistSensors();
 
-    shield.power.connectCapacitor(LEG1);
+    shield.power.disconnectCapacitor(LEG1);
     shield.power.disconnectCapacitor(LEG2);
 
     /* Enable switch control with max and min duty cycle*/
@@ -208,7 +207,7 @@ void loop_communication_task()
         printk(" ________________________________________ \n"
                "|     ---- MENU buck voltage mode ----   |\n"
                "|     press i : idle mode                |\n"
-               "|     press d : discharge capacitor mode |\n"
+               "|     press p : power mode               |\n"
                "|     press r : download datas           |\n"
                "|________________________________________|\n\n");
         /*------------------------------------------------------ */
@@ -217,12 +216,8 @@ void loop_communication_task()
         printk("idle mode\n");
         mode = IDLEMODE;
         break;
-    case 'd':
-        printk("power mode\n");
-        mode = DECHARGEMODE;
-        break;
-    case 's':
-        mode = SEQUENCEMODE;
+    case 'p':
+        mode = POWERMODE;
         trigger = true;
         seq_timer = 0;
         break;
@@ -249,21 +244,14 @@ void loop_application_task()
         }
         is_downloading = false;
     }
-    else if (mode == DECHARGEMODE)
-    {
-        spin.led.turnOn();
-    }
-    else if (mode == SEQUENCEMODE)
+    else if (mode == POWERMODE)
     {
         spin.led.toggle();
     }
-
-
         printk("%.3f:", (double)I1_low_value);
         printk("%.3f:", (double)V1_low_value);
+        printk("%.3f:", (double)V_high);
         printk("%.3f:", (double)g);
-        printk("%.3f:", (double)Vsource_ON_once_indicator);
-        printk("%.3f:", (double)seq_timer);
         printk("%.3f:", (double)critical_task_timer);
         printk("%.3f:", (double)scope_timer);
         printk("%i:", mode);
@@ -298,13 +286,7 @@ void loop_critical_task()
 
     meas_data = shield.sensors.getLatestValue(V_HIGH);
     if (meas_data != NO_VALUE) V_high = meas_data;
-    /*
-    //For testing logic
-    if(critical_task_timer == 100000)
-        {
-            V1_low_value=20;
-        }
-    */
+
 
     if (mode == IDLEMODE)
     {
@@ -314,64 +296,10 @@ void loop_critical_task()
         }
         pwm_enable = false;
 
-        if (V1_low_value<2) // If VDC is OFF, sequence can be restarted without uploading again
-        {
-            Vsource_ON_once_indicator = false;
-        }
+    }
 
-        if (V1_low_value>=2 && Vsource_ON_once_indicator == false) // If VDC is ON, starts sequence with small delay
-        {
-            mode = SEQUENCEMODE;
-            trigger = true;
-            Vsource_ON_once_indicator = true;
-            seq_timer = 0;
-        }
-    }
-    else if (mode == DECHARGEMODE)
+    else if (mode == POWERMODE)
     {
-        shield.power.setDutyCycle(LEG1,0.0);
-        if (!pwm_enable)
-        {
-            pwm_enable = true;
-            shield.power.start(LEG1);
-        }
-    }
-    else if (mode == SEQUENCEMODE)
-    {
-        
-        if(seq_timer >= 0 && seq_timer < decalage_source + 0.1) // BLOCK
-        {
-            g=2;
-            
-        }
-        if(seq_timer >= decalage_source + 0.1 && seq_timer < decalage_source +  0.2) // ON
-        {
-            g=1;
-        }
-        if(seq_timer >= decalage_source + 0.2 && seq_timer < decalage_source + 0.7) // OFF
-        {
-            g=0;
-            /*
-            //For testing logic
-            if(seq_timer >= 0.45 && !Vsource_turnoff_indicator)
-            {
-                V1_low_value=0;
-                Vsource_turnoff_indicator = true;
-            }
-            */
-        }
-        if(seq_timer >= decalage_source + 0.7 && seq_timer < decalage_source + 0.8) // BLOCK
-        {
-            g=2;
-        }
-        if(seq_timer >= decalage_source + 0.8 && seq_timer < decalage_source + 1) // ON
-        {
-            g=1;
-        }
-        if(seq_timer >= decalage_source + 1) // IDLE
-        {
-            mode = IDLEMODE;
-        }
         g_float = (float)g;
         
         /* Scope data acquisition */
@@ -409,7 +337,6 @@ void loop_critical_task()
             pwm_enable = false;
         }            
         
-        seq_timer += Ts;
     }
     critical_task_timer++;
 
