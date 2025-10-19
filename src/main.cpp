@@ -592,6 +592,25 @@ void loop_critical_task()
                     Led_turnON_LL();
                     change_state_command = false; // Reset the flag
                 }
+                shield.power.setDutyCycle(LEG1,1.0);
+                if (!pwm_enable)
+                {
+                    pwm_enable = true;
+                    shield.power.start(LEG1);
+                }
+            }
+            else if (module_comand == 2)
+            {
+                if (change_state_command)
+                {
+                    Led_turnOFF_LL();
+                    change_state_command = false; // Reset the flag
+                }
+                if (pwm_enable == true)
+                {
+                    shield.power.stop(ALL);
+                }
+                pwm_enable = false;
             }
             else
             {
@@ -599,6 +618,12 @@ void loop_critical_task()
                 {
                     Led_turnOFF_LL();
                     change_state_command = false; // Reset the flag
+                }
+                shield.power.setDutyCycle(LEG1,0.0);
+                if (!pwm_enable)
+                {
+                    pwm_enable = true;
+                    shield.power.start(LEG1);
                 }
             }
         }
