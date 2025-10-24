@@ -2,14 +2,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Load the CSV file
-df = pd.read_csv('src/Data_records/2025-10-24_11-28-20-record.csv')
+df = pd.read_csv('src/Data_records/2025-10-24_12-28-22-record.csv')
 
 # Defina os períodos
 scope_period = 1  # exemplo, ajuste conforme o seu caso
 critical_task_period = 1e-6   # exemplo, ajuste conforme o seu caso
 
 # Filtra dados (os quatro gráficos usam a mesma filtragem)
-mask = (df.iloc[:, 0] > 0) & (df.iloc[:, 0] < 1000)
+mask = (df.iloc[:, 0] > 0) & (df.iloc[:, 0] < 200)
 t_filtered = df.iloc[:, 0][mask] * scope_period * critical_task_period  # tempo em segundos
 
 # Dados do primeiro gráfico: m_u e m_l

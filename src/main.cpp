@@ -520,8 +520,8 @@ static uint8_t modules_indexes_upper_arm[3] = {0,1,2}; // Upper arm modules inde
 static float32_t modules_capacitor_voltages_lower_arm[3] = {3.0,5.0,4.0}; // Lower arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
 static uint8_t modules_indexes_lower_arm[3] = {0,1,2}; // Lower arm modules indexes to be sorted with the capacitor voltage vector
 static uint8_t total_number_of_modules_arm= 3;
-static int8_t i_upper_arm= 1; // Upper arm current, to be substituted by measured current when implementing MMC
-static int8_t i_lower_arm= -1; // Lower arm current, to be substituted by measured current when implementing MMC
+static float32_t i_upper_arm= 1.0F; // Upper arm current, to be substituted by measured current when implementing MMC
+static float32_t i_lower_arm= -1.0F; // Lower arm current, to be substituted by measured current when implementing MMC
 
 /* Gate logic */
 uint8_t g_u[3] = {0,0,0}; // Gate signals to send to the upper modules
@@ -906,6 +906,7 @@ void loop_critical_task()
             number_of_connected_submodules_lower_arm = round(total_number_of_modules_arm*modulation_signal_lower); // recuperate for scope
 
             memcpy(modules_capacitor_voltages_upper_arm, MMC_capacitor_voltage, 3 * sizeof(float32_t));
+            i_upper_arm, MMC_arm_current[0];
             // memcpy(modules_capacitor_voltages_lower_arm, &MMC_capacitor_voltage[3], 3 * sizeof(float32_t));
 
             sorting(); // Executes the CVB algorithm, chosing which modules to connect
