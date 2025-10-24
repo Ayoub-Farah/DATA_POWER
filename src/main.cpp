@@ -46,37 +46,147 @@
 /*-- Zephyr includes --*/
 #include "zephyr/console/console.h"
 
-/* Boards roles, LEAD = MMC_LEAD */
+
 #define MMC_LEAD 0
-#define MMC_M1 1
-#define MMC_M2 2
-#define MMC_M3 3
-#define MMC_M4 4
-#define MMC_M5 5
-#define MMC_M6 6
+#define MMC_SM1 1
+#define MMC_SM2 2
+#define MMC_SM3 3
+#define MMC_SM4 4
+#define MMC_SM5 5
+#define MMC_SM6 6
+#define MMC_SM7 7
+#define MMC_SM8 8
+#define MMC_SM9 9
+#define MMC_SM10 10
+
+#define IDLE 0
+#define POWER 1
+#define LEAD_ERROR 2
+#define OVER_VOLTAGE 3
+#define UNDER_VOLTAGE 4
+#define OVER_CURRENT 5
+
+constexpr uint8_t MMC_SM_COUNT = 10;
+constexpr uint8_t MMC_SM_FIRST = MMC_SM1;
+constexpr uint8_t MMC_SM_LAST = MMC_SM10;
+
+/* -------------- BOARD IDENTIFICATION ----------------------- */
+
+constexpr uint32_t UID_MMC_LEAD_BOARD = 0x00270050;
+constexpr uint32_t UID_MMC_SM1_BOARD = 0x002A004B;
+constexpr uint32_t UID_MMC_SM2_BOARD = 0x002A004D;
+constexpr uint32_t UID_MMC_SM3_BOARD = 0x002B0043;
+constexpr uint32_t UID_MMC_SM4_BOARD = 0x11116666;
+constexpr uint32_t UID_MMC_SM5_BOARD = 0x11117777;
+constexpr uint32_t UID_MMC_SM6_BOARD = 0x11118888;
+constexpr uint32_t UID_MMC_SM7_BOARD = 0x11119999;
+constexpr uint32_t UID_MMC_SM8_BOARD = 0x1111AAA0;
+constexpr uint32_t UID_MMC_SM9_BOARD = 0x1111BBB1;
+constexpr uint32_t UID_MMC_SM10_BOARD = 0x1111CCC2;
+
+static uint32_t read_board_uid()
+{
+    static volatile uint32_t *const uid0 =
+        reinterpret_cast<volatile uint32_t *>(0x1FFF7590UL);
+    return *uid0;
+}
+
+static uint8_t detect_module_id()
+{
+    switch (read_board_uid())
+    {
+    case UID_MMC_LEAD_BOARD:
+        return MMC_LEAD;
+    case UID_MMC_SM1_BOARD:
+        return MMC_SM1;
+    case UID_MMC_SM2_BOARD:
+        return MMC_SM2;
+    case UID_MMC_SM3_BOARD:
+        return MMC_SM3;
+    case UID_MMC_SM4_BOARD:
+        return MMC_SM4;
+    case UID_MMC_SM5_BOARD:
+        return MMC_SM5;
+    case UID_MMC_SM6_BOARD:
+        return MMC_SM6;
+    case UID_MMC_SM7_BOARD:
+        return MMC_SM7;
+    case UID_MMC_SM8_BOARD:
+        return MMC_SM8;
+    case UID_MMC_SM9_BOARD:
+        return MMC_SM9;
+    case UID_MMC_SM10_BOARD:
+        return MMC_SM10;
+    default:
+        return MMC_SM1;
+    }
+}
+
+/* -------------- DATA PACKING HELPERS ----------------------- */
+
+constexpr float32_t Cap_voltage_SCALE = 50.0F;
+constexpr float32_t Arm_current_SCALE = 50.0F;
+constexpr float32_t Arm_current_OFFSET = 25.0F;
+
+static inline uint16_t mmc_encode_voltage(float32_t voltage)
+{
+    int32_t raw = static_cast<int32_t>((voltage * 4095.0F) / Cap_voltage_SCALE);
+    if (raw < 0)
+    {
+        raw = 0;
+    }
+    if (raw > 0x0FFF)
+    {
+        raw = 0x0FFF;
+    }
+    return static_cast<uint16_t>(raw);
+}
 
 /**
- * @brief This function is considering a byte called 'cmd'
- *        which can turn on or off signals.
- *        The signals are identified by their 'id'.
- *        The value 'val' is used to set the signal:
- *        - if val is true, the signal is set to 1
- *        - if val is false, the signal is set to 0
+ * @brief Decode a raw capacitor voltage value from an MMC frame.
+ *
+ * @param raw 12-bit encoded capacitor voltage.
+ * @return Physical capacitor voltage in volts.
  */
-#define SET_SIGNAL(cmd, id, val)   \
-    do                             \
-    {                              \
-        if (val)                   \
-            (cmd) |= (1 << (id));  \
-        else                       \
-            (cmd) &= ~(1 << (id)); \
-    } while (0)
+static inline float32_t mmc_decode_voltage(uint16_t raw)
+{
+    return (Cap_voltage_SCALE * static_cast<float32_t>(raw & 0x0FFF)) / 4095.0F;
+}
 
 /**
- * @brief This function is to get the turn on/off state of a signal
- *        identified by its 'id' from a byte called 'cmd'.
+ * @brief Encode an arm current into the 12-bit transport format.
+ *
+ * @param current Physical arm current in amperes.
+ * @return 12-bit encoded current suitable for MMC frames.
  */
-#define GET_SIGNAL(cmd, id) (((cmd) >> (id)) & 0x01)
+static inline uint16_t mmc_encode_current(float32_t current)
+{
+    float32_t shifted = current + Arm_current_OFFSET;
+    int32_t raw = static_cast<int32_t>((shifted * 4095.0F) / Arm_current_SCALE);
+    if (raw < 0)
+    {
+        raw = 0;
+    }
+    if (raw > 0x0FFF)
+    {
+        raw = 0x0FFF;
+    }
+    return static_cast<uint16_t>(raw);
+}
+
+/**
+ * @brief Decode a raw arm current value from an MMC frame.
+ *
+ * @param raw 12-bit encoded arm current.
+ * @return Physical arm current in amperes.
+ */
+static inline float32_t mmc_decode_current(uint16_t raw)
+{
+    return ((Arm_current_SCALE * static_cast<float32_t>(raw & 0x0FFF)) / 4095.0F) - Arm_current_OFFSET;
+}
+
+
+
 
 /* --------------SETUP FUNCTIONS DECLARATION------------------- */
 
@@ -92,39 +202,258 @@ void loop_critical_task();
 
 /* --------------USER VARIABLES DECLARATIONS------------------- */
 
-/* Define module_ID depending on the ID of the board */
-uint8_t module_ID = MMC_LEAD; // The ID of the module, can be set to MMC_LEAD or any other SMx
+/* Auto-detected module ID (uses dummy UIDs for now). */
+uint8_t module_ID = detect_module_id(); // The ID of the module, can be set to MMC_LEAD or any other SMx
 
 static uint8_t module_comand; // The command the followers needs to apply
 static uint8_t module_command_past;
 static bool change_state_command = false; // Flag to change the state of the command
 static bool send_idle = false;            // Flag to send idle command from master to followers
 
+constexpr uint8_t MMC_STATUS_CODE_BITS = 3;
+constexpr uint32_t MMC_STATUS_CODE_MASK = (1UL << MMC_STATUS_CODE_BITS) - 1U;
+constexpr uint32_t MMC_STATUS_UPPER_ARM_MASK = (1UL << MMC_STATUS_CODE_BITS);
+
 /**
- * This is a structure that defines the frame
- * that will be sent and received through the RS485 communication.
- * command is a byte that contains the state of the signals
- * Capacitor_Voltage is the voltage of the capacitor
- * ID is the ID of the module
+ * @brief Frame exchanged over the RS485 communication bus.
+ *
+ * Structure overview:
+ * - `sm_insertion`: bit-packed insertion flags for each submodule.
+ * - `capacitor_voltage_raw`: 12-bit encoded capacitor voltage.
+ * - `arm_current_raw`: 12-bit encoded arm current.
+ * - `status`: 3-bit global status level plus the arm selection flag.
+ * - `sm_id`: identifier of the sender (lead or submodule index).
  */
 struct MMC_frame
 {
-    uint8_t command;
-    float32_t Capacitor_Voltage;
-    uint8_t status;
-    uint8_t ID;
+    union
+    {
+        uint16_t raw;
+        struct
+        {
+            uint16_t sm1_inserted : 1;
+            uint16_t sm2_inserted : 1;
+            uint16_t sm3_inserted : 1;
+            uint16_t sm4_inserted : 1;
+            uint16_t sm5_inserted : 1;
+            uint16_t sm6_inserted : 1;
+            uint16_t sm7_inserted : 1;
+            uint16_t sm8_inserted : 1;
+            uint16_t sm9_inserted : 1;
+            uint16_t sm10_inserted : 1;
+        } bits;
+    } sm_insertion;
+    uint16_t capacitor_voltage_raw : 12;
+    uint16_t arm_current_raw : 12;
+    union
+    {
+        uint32_t raw;
+        struct
+        {
+            uint32_t status_code : MMC_STATUS_CODE_BITS;
+            uint32_t upper_arm_frame : 1;
+            uint32_t reserved : (32 - MMC_STATUS_CODE_BITS - 1);
+        } bits;
+    } status;
+    uint8_t sm_id;
 } __packed;
 
 typedef MMC_frame MMC_frame_t;
+
+/**
+ * @brief Store an encoded capacitor voltage value inside an MMC frame.
+ *
+ * @param frame Frame that will carry the voltage information.
+ * @param raw 12-bit raw voltage to write into the frame.
+ */
+static inline void mmc_frame_set_voltage_raw(MMC_frame_t &frame, uint16_t raw)
+{
+    frame.capacitor_voltage_raw = static_cast<uint16_t>(raw & 0x0FFFU);
+}
+
+/**
+ * @brief Get the encoded capacitor voltage contained in an MMC frame.
+ *
+ * @param frame Frame that carries the voltage information.
+ * @return 12-bit raw capacitor voltage.
+ */
+static inline uint16_t mmc_frame_get_voltage_raw(const MMC_frame_t &frame)
+{
+    return static_cast<uint16_t>(frame.capacitor_voltage_raw & 0x0FFFU);
+}
+
+/**
+ * @brief Store an encoded arm current value inside an MMC frame.
+ *
+ * @param frame Frame that will carry the current information.
+ * @param raw 12-bit raw current to write into the frame.
+ */
+static inline void mmc_frame_set_current_raw(MMC_frame_t &frame, uint16_t raw)
+{
+    frame.arm_current_raw = static_cast<uint16_t>(raw & 0x0FFFU);
+}
+
+/**
+ * @brief Get the encoded arm current contained in an MMC frame.
+ *
+ * @param frame Frame that carries the current information.
+ * @return 12-bit raw arm current.
+ */
+static inline uint16_t mmc_frame_get_current_raw(const MMC_frame_t &frame)
+{
+    return static_cast<uint16_t>(frame.arm_current_raw & 0x0FFFU);
+}
+
+/**
+ * @brief Set the submodule identifier associated with an MMC frame.
+ *
+ * @param frame Frame to update.
+ * @param id Identifier of the sender (lead or submodule).
+ */
+static inline void mmc_frame_set_sm_identifier(MMC_frame_t &frame, uint8_t id)
+{
+    frame.sm_id = id;
+}
+
+/**
+ * @brief Read the submodule identifier stored inside an MMC frame.
+ *
+ * @param frame Frame to inspect.
+ * @return Sender identifier extracted from the frame.
+ */
+static inline uint8_t mmc_frame_get_sm_identifier(const MMC_frame_t &frame)
+{
+    return frame.sm_id;
+}
+
+/**
+ * @brief Update the insertion flag for a given submodule in an MMC frame.
+ *
+ * @param frame Frame to modify.
+ * @param sm_index Submodule identifier to update.
+ * @param inserted Set to true if the submodule is inserted.
+ */
+static inline void mmc_frame_set_sm_inserted(MMC_frame_t &frame, uint8_t sm_index, bool inserted)
+{
+    if (sm_index < MMC_SM_FIRST || sm_index > MMC_SM_LAST)
+    {
+        return;
+    }
+    uint8_t shift = static_cast<uint8_t>(sm_index - MMC_SM_FIRST);
+    uint16_t mask = static_cast<uint16_t>(1U << shift);
+    if (inserted)
+    {
+        frame.sm_insertion.raw |= mask;
+    }
+    else
+    {
+        frame.sm_insertion.raw &= static_cast<uint16_t>(~mask);
+    }
+}
+
+/**
+ * @brief Check whether a submodule is marked as inserted in an MMC frame.
+ *
+ * @param frame Frame to inspect.
+ * @param sm_index Submodule identifier to check.
+ * @return True when the insertion flag is set, false otherwise.
+ */
+static inline bool mmc_frame_get_sm_inserted(const MMC_frame_t &frame, uint8_t sm_index)
+{
+    if (sm_index < MMC_SM_FIRST || sm_index > MMC_SM_LAST)
+    {
+        return false;
+    }
+    uint8_t shift = static_cast<uint8_t>(sm_index - MMC_SM_FIRST);
+    uint16_t mask = static_cast<uint16_t>(1U << shift);
+    return (frame.sm_insertion.raw & mask) != 0U;
+}
+
+/**
+ * @brief Set the global status level encoded inside an MMC frame.
+ *
+ * @param frame Frame to modify.
+ * @param status_code 3-bit status value (IDLE, POWER, error levels).
+ */
+static inline void mmc_frame_set_status_code(MMC_frame_t &frame, uint8_t status_code)
+{
+    frame.status.raw &= ~MMC_STATUS_CODE_MASK;
+    frame.status.raw |= static_cast<uint32_t>(status_code & MMC_STATUS_CODE_MASK);
+}
+
+/**
+ * @brief Retrieve the global status level encoded inside an MMC frame.
+ *
+ * @param frame Frame to inspect.
+ * @return 3-bit status value (IDLE, POWER, error levels).
+ */
+static inline uint8_t mmc_frame_get_status_code(const MMC_frame_t &frame)
+{
+    return static_cast<uint8_t>(frame.status.raw & MMC_STATUS_CODE_MASK);
+}
+
+/**
+ * @brief Mark whether the frame data describes the upper arm.
+ *
+ * @param frame Frame to update.
+ * @param is_upper_arm True when the frame belongs to the upper arm.
+ */
+static inline void mmc_frame_set_upper_arm_flag(MMC_frame_t &frame, bool is_upper_arm)
+{
+    if (is_upper_arm)
+    {
+        frame.status.raw |= MMC_STATUS_UPPER_ARM_MASK;
+    }
+    else
+    {
+        frame.status.raw &= ~MMC_STATUS_UPPER_ARM_MASK;
+    }
+}
+
+/**
+ * @brief Determine whether the MMC frame is associated with the upper arm.
+ *
+ * @param frame Frame to inspect.
+ * @return True when the upper arm flag is set, false otherwise.
+ */
+static inline bool mmc_frame_is_upper_arm(const MMC_frame_t &frame)
+{
+    return (frame.status.raw & MMC_STATUS_UPPER_ARM_MASK) != 0U;
+}
+
+/**
+ * @brief Determine if a module identifier corresponds to the upper arm.
+ *
+ * @param id Module identifier under test.
+ * @return True when the module belongs to the upper arm side.
+ */
+static inline bool mmc_is_upper_arm_module(uint8_t id)
+{
+    if (id == MMC_LEAD)
+    {
+        return true;
+    }
+    if (id < MMC_SM_FIRST || id > MMC_SM_LAST)
+    {
+        return false;
+    }
+    uint8_t offset = static_cast<uint8_t>(id - MMC_SM_FIRST);
+    return offset < (MMC_SM_COUNT / 2);
+}
+
 static MMC_frame_t dataTX_mmc;
 static MMC_frame_t dataRX_mmc;
 
-float32_t MMC_capacitor_voltage[6];
+float32_t MMC_capacitor_voltage[MMC_SM_COUNT];
+float32_t MMC_arm_current[MMC_SM_COUNT];
 
-uint8_t buffer_tx[7];
-uint8_t buffer_rx[7];
+constexpr size_t MMC_FRAME_SIZE = sizeof(MMC_frame_t);
 
-float32_t MMC_voltage = 0.0f;
+uint8_t buffer_tx[MMC_FRAME_SIZE];
+uint8_t buffer_rx[MMC_FRAME_SIZE];
+
+float32_t Cap_voltage = 0.0f;
+static float32_t Arm_current = 0.0f;
 
 uint32_t counter_timer = 0;
 uint32_t counter_receive = 0;
@@ -207,7 +536,7 @@ static float32_t g_l_3;
 static float32_t m = 1;
 static float32_t a = 1;
 static float32_t angle;
-static const float f0 = 50.F;
+static const float f0 = 250.F;
 static const float w0 = 2 * PI * f0;
 static float32_t Ts = control_task_period * 1e-6F;
 static float32_t modulation_signal_upper;
@@ -261,24 +590,56 @@ void dump_scope_datas(ScopeMimicry &scope)
     printk("end record\n");
 }
 
-/* RS-485 reception_function: executed when a message is received */
+static void update_measurements(void)
+{
+    float32_t latest = shield.sensors.getLatestValue(V_HIGH);
+    if (latest != NO_VALUE)
+    {
+        V_high = latest;
+        Cap_voltage = V_high;
+    }
+
+    latest = shield.sensors.getLatestValue(I1_LOW);
+    if (latest != NO_VALUE)
+    {
+        I1_low_value = latest;
+        Arm_current = I1_low_value;
+    }
+}
+
 void reception_function(void)
 {
     dataRX_mmc = *(MMC_frame_t *)buffer_rx;
+    uint8_t sender_id = mmc_frame_get_sm_identifier(dataRX_mmc);
+    uint8_t status_code = mmc_frame_get_status_code(dataRX_mmc);
 
     if (module_ID == MMC_LEAD)
     {
-        MMC_capacitor_voltage[dataRX_mmc.ID - 1] = dataRX_mmc.Capacitor_Voltage;
+        if ((sender_id >= MMC_SM_FIRST) && (sender_id <= MMC_SM_LAST))
+        {
+            const uint8_t index = sender_id - MMC_SM_FIRST;
+            MMC_capacitor_voltage[index] =
+                mmc_decode_voltage(mmc_frame_get_voltage_raw(dataRX_mmc));
+            MMC_arm_current[index] =
+                mmc_decode_current(mmc_frame_get_current_raw(dataRX_mmc));
+
+            if ((status_code >= LEAD_ERROR) && (mode != IDLEMODE))
+            {
+                mode = IDLEMODE;
+                send_idle = false;
+            }
+        }
     }
 
     else
     {
-        if (dataRX_mmc.ID == MMC_LEAD)
+        if (sender_id == MMC_LEAD)
         {
-            /* retrievig command from lead message*/
-            module_comand = GET_SIGNAL(dataRX_mmc.command, module_ID);
+            /* retrieving command from lead message*/
+            module_comand = static_cast<uint8_t>(
+                mmc_frame_get_sm_inserted(dataRX_mmc, module_ID));
             /* retrieving status */
-            if (dataRX_mmc.status == 1)
+            if (status_code == POWER)
             {
                 mode = POWERMODE;
             }
@@ -290,20 +651,22 @@ void reception_function(void)
 
         /* The board following the ID of the one who sent will start sending
             the next message */
-        if ((dataRX_mmc.ID == module_ID - 1))
+        if (sender_id == static_cast<uint8_t>(module_ID - 1))
         {
             dataTX_mmc = dataRX_mmc; // Copy the received data to the transmission data
-            dataTX_mmc.ID = module_ID;
-            dataTX_mmc.Capacitor_Voltage = MMC_voltage; /* TODO :uncomment when we get the voltage */
-            if (mode == POWERMODE)
-            {
-                memcpy(buffer_tx, &dataTX_mmc, sizeof(dataTX_mmc));
-                communication.rs485.startTransmission();
-            }
+            mmc_frame_set_sm_identifier(dataTX_mmc, module_ID);
+            mmc_frame_set_upper_arm_flag(dataTX_mmc, mmc_is_upper_arm_module(module_ID));
+            mmc_frame_set_voltage_raw(dataTX_mmc,
+                                      mmc_encode_voltage(Cap_voltage));
+            mmc_frame_set_current_raw(dataTX_mmc,
+                                      mmc_encode_current(Arm_current));
+            memcpy(buffer_tx, &dataTX_mmc, sizeof(dataTX_mmc));
+            communication.rs485.startTransmission();
         }
     }
     counter_receive++;
 }
+
 
 /**
  * This is the setup routine.
@@ -418,14 +781,6 @@ void loop_background_task()
         if (mode == POWERMODE)
         {
             spin.led.toggle();
-            printk("%1.f:", number_of_connected_submodules_upper_arm);
-            printk("%1.f:", number_of_connected_submodules_lower_arm);
-            printk("%u:", counter_seq);
-            printk("%u:", sw_timer);
-            printk("%u:", g_u_1);
-            printk("%u:", g_u_2);
-            printk("%u:", g_u_3);
-            printk("\n");
         }
     }
 
@@ -515,6 +870,8 @@ void sorting()
  */
 void loop_critical_task()
 {
+    update_measurements();
+
     if (mode == POWERMODE)
     {
         /* The lead sends commands to the followers */
@@ -566,15 +923,20 @@ void loop_critical_task()
             sw_timer++;
             scope_timer++;
 
-            /* Set gate value to be sent to the modules */
-            SET_SIGNAL(dataTX_mmc.command, MMC_M1, g_u[0]);
-            SET_SIGNAL(dataTX_mmc.command, MMC_M2, g_u[1]);
-            SET_SIGNAL(dataTX_mmc.command, MMC_M3, g_u[2]);
+            dataTX_mmc.sm_insertion.raw = 0U;
+            mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM1, g_u[0] != 0U);
+            mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM2, g_u[1] != 0U);
+            mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM3, g_u[2] != 0U);
 
-            dataTX_mmc.ID = module_ID;
+            dataTX_mmc.status.raw = 0U;
+
+            mmc_frame_set_status_code(dataTX_mmc, POWER);
+            mmc_frame_set_upper_arm_flag(dataTX_mmc, mmc_is_upper_arm_module(module_ID));
+            mmc_frame_set_sm_identifier(dataTX_mmc, module_ID);
+            mmc_frame_set_voltage_raw(dataTX_mmc, mmc_encode_voltage(Cap_voltage));
+            mmc_frame_set_current_raw(dataTX_mmc, mmc_encode_current(Arm_current));
             memcpy(buffer_tx, &dataTX_mmc, sizeof(dataTX_mmc));
-            dataTX_mmc.status = 1;
-            communication.rs485.startTransmission(); // Starts message transmission to other boards
+            communication.rs485.startTransmission();
         }
         else
         {
@@ -631,14 +993,19 @@ void loop_critical_task()
     }
     else if (mode == IDLEMODE)
     {
-        /* Made to send IDLE flag only once to all modules */
-        if (!send_idle)
+        /* Made to send IDLE flag only once */
+        if (!send_idle && module_ID == MMC_LEAD)
         {
-            dataTX_mmc.ID = module_ID;
-            dataTX_mmc.status = 0;
+            dataTX_mmc.sm_insertion.raw = 0U;
+            dataTX_mmc.status.raw = 0U;
+            mmc_frame_set_status_code(dataTX_mmc, IDLE);
+            mmc_frame_set_upper_arm_flag(dataTX_mmc, mmc_is_upper_arm_module(module_ID));
+            mmc_frame_set_sm_identifier(dataTX_mmc, module_ID);
+            mmc_frame_set_voltage_raw(dataTX_mmc, mmc_encode_voltage(Cap_voltage));
+            mmc_frame_set_current_raw(dataTX_mmc, mmc_encode_current(Arm_current));
             memcpy(buffer_tx, &dataTX_mmc, sizeof(dataTX_mmc));
             communication.rs485.startTransmission();
-            send_idle = true; // Set the flag to send idle command to true, meaning that idle mode is active
+            send_idle = true; // Set the flag to send idle command
         }
     }
     counter_timer++;
