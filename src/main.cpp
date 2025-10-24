@@ -72,10 +72,10 @@ constexpr uint8_t MMC_SM_LAST = MMC_SM10;
 
 /* -------------- BOARD IDENTIFICATION ----------------------- */
 
-constexpr uint32_t UID_MMC_LEAD_BOARD = 0x00270050;
-constexpr uint32_t UID_MMC_SM1_BOARD = 0x002A004B;
-constexpr uint32_t UID_MMC_SM2_BOARD = 0x002A004D;
-constexpr uint32_t UID_MMC_SM3_BOARD = 0x002B0043;
+constexpr uint32_t UID_MMC_LEAD_BOARD = 0x00330054;
+constexpr uint32_t UID_MMC_SM1_BOARD = 0x0033004B;
+constexpr uint32_t UID_MMC_SM2_BOARD = 0x00330049;
+constexpr uint32_t UID_MMC_SM3_BOARD = 0x0033004C;
 constexpr uint32_t UID_MMC_SM4_BOARD = 0x11116666;
 constexpr uint32_t UID_MMC_SM5_BOARD = 0x11117777;
 constexpr uint32_t UID_MMC_SM6_BOARD = 0x11118888;
@@ -247,12 +247,11 @@ struct MMC_frame
     uint16_t arm_current_raw : 12;
     union
     {
-        uint32_t raw;
+        uint8_t raw;
         struct
         {
-            uint32_t status_code : MMC_STATUS_CODE_BITS;
-            uint32_t upper_arm_frame : 1;
-            uint32_t reserved : (32 - MMC_STATUS_CODE_BITS - 1);
+            uint8_t status_code : MMC_STATUS_CODE_BITS;
+            uint8_t upper_arm_frame : 1;
         } bits;
     } status;
     uint8_t sm_id;
@@ -460,6 +459,8 @@ uint32_t counter_receive = 0;
 
 uint8_t received_serial_char; // Variable to store the received character from the serial interface
 int8_t CommTask_num;
+
+static bool master = false;
 
 enum serial_interface_menu_mode // LIST OF POSSIBLE MODES FOR THE OWNTECH CONVERTER
 {
@@ -678,6 +679,10 @@ void reception_function(void)
 void setup_routine()
 {
 
+    const uint32_t board_uid = read_board_uid();
+    printk("Board UID: 0x%08" PRIX32 "\n", board_uid);
+    master = (module_ID == MMC_LEAD);
+
     config_led_LL(); // Configure the LED pin in Low Level
 
     shield.power.initBuck(ALL);
@@ -694,7 +699,6 @@ void setup_routine()
     task.startBackground(background_task_number);
     /* Uncomment following line if you use the critical task */
     task.startCritical();
-
     CommTask_num = task.createBackground(loop_communication_task);
     task.startBackground(CommTask_num);
 
@@ -702,7 +706,7 @@ void setup_routine()
                                   reception_function,
                                   SPEED_20M); // custom configuration for RS485
                                               /* Configure scope channels, what measurements do you want to acquire? */
-    if (module_ID == MMC_LEAD)
+    if (master == true)
     {
         scope.connectChannel(modulation_signal_upper, "m_u");
         scope.connectChannel(modulation_signal_lower, "m_l");
