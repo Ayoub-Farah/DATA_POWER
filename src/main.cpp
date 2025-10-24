@@ -715,9 +715,9 @@ void setup_routine()
         scope.connectChannel(g_u_1, "g_u_1");
         scope.connectChannel(g_u_2, "g_u_2");
         scope.connectChannel(g_u_3, "g_u_3");
-        scope.connectChannel(g_l_1, "g_l_1");
-        scope.connectChannel(g_l_2, "g_l_2");
-        scope.connectChannel(g_l_3, "g_l_3");
+        scope.connectChannel(MMC_capacitor_voltage[0], "v_c_1");
+        scope.connectChannel(MMC_capacitor_voltage[2], "v_c_2");
+        scope.connectChannel(MMC_capacitor_voltage[2], "v_c_3");
         scope.set_trigger(&a_trigger);
         scope.set_delay(0.0F);
         scope.start();
@@ -905,7 +905,8 @@ void loop_critical_task()
             number_of_connected_submodules_upper_arm = round(total_number_of_modules_arm*modulation_signal_upper); // recuperate for scope
             number_of_connected_submodules_lower_arm = round(total_number_of_modules_arm*modulation_signal_lower); // recuperate for scope
 
-            
+            memcpy(modules_capacitor_voltages_upper_arm, MMC_capacitor_voltage, 3 * sizeof(float32_t));
+            // memcpy(modules_capacitor_voltages_lower_arm, &MMC_capacitor_voltage[3], 3 * sizeof(float32_t));
 
             sorting(); // Executes the CVB algorithm, chosing which modules to connect
 

@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Load the CSV file
-df = pd.read_csv('src/Data_records/2025-10-16_16-52-40-record.csv')
+df = pd.read_csv('src/Data_records/2025-10-24_11-28-20-record.csv')
 
 # Defina os períodos
 scope_period = 1  # exemplo, ajuste conforme o seu caso
@@ -24,12 +24,12 @@ N_l_filtered = df['N_l'][mask]
 g_u_1_filtered = df['g_u_1'][mask]
 g_u_2_filtered = df['g_u_2'][mask]
 g_u_3_filtered = df['g_u_3'][mask]
-g_l_1_filtered = df['g_l_1'][mask]
-g_l_2_filtered = df['g_l_2'][mask]
-g_l_3_filtered = df['g_l_3'][mask]
+v_c_1_filtered = df['v_c_1'][mask]
+v_c_2_filtered = df['v_c_2'][mask]
+v_c_3_filtered = df['v_c_3'][mask]
 
 # Cria os subplots
-fig, axs = plt.subplots(4, 1, figsize=(10, 10), sharex=True)
+fig, axs = plt.subplots(5, 1, figsize=(10, 10), sharex=True)
 
 # Subplot 1: N_u e N_l
 axs[0].plot(t_filtered, N_u_filtered, label='Nb of inserted modules N_on_u')
@@ -56,6 +56,14 @@ axs[3].plot(t_filtered, g_u_3_filtered, label='g_u_3 (1 = module ON, 0 = module 
 axs[3].set_ylabel('g [-]')
 axs[3].legend()
 axs[3].grid(True)
+
+# Subplot 2: g_u_1
+axs[4].plot(t_filtered, v_c_1_filtered, label='v_c_1', color='tab:blue')
+axs[4].plot(t_filtered, v_c_2_filtered, label='v_c_2', color='tab:orange')
+axs[4].plot(t_filtered, v_c_3_filtered, label='v_c_3', color='tab:green')
+axs[4].set_ylabel('v_c [V]')
+axs[4].legend()
+axs[4].grid(True)
 
 # Ajusta layout
 plt.tight_layout()
