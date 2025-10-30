@@ -927,9 +927,15 @@ void loop_critical_task()
             }
 
             dataTX_mmc.sm_insertion.raw = 0U;
-            mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM1, g_u[0] != 0U);
-            mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM2, g_u[1] != 0U);
-            mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM3, g_u[2] != 0U);
+            // mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM1, g_u[0] != 0U);
+            // mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM2, g_u[1] != 0U);
+            // mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM3, g_u[2] != 0U);
+            // mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM4, g_u[3] != 0U);
+            // mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM5, g_u[4] != 0U);
+
+            for (uint8_t counter = 0; counter < total_number_of_modules_arm; counter++) {
+                mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM1 + counter, g_u[counter] != 0U);
+            }
 
             dataTX_mmc.status.raw = 0U;
 
