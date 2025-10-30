@@ -507,7 +507,7 @@ static uint32_t scope_period = 1; // scope acquire data every t = scope_period *
 static uint8_t index_list[10] = {0,1,2,3,4,5,6,7,8,9}; // Upper arm modules indexes to be sorted with the capacitor voltage vector
 static float32_t number_of_connected_submodules_upper_arm;
 static float32_t number_of_connected_submodules_lower_arm;
-static const uint8_t total_number_of_modules_arm = 3;
+static const uint8_t total_number_of_modules_arm = 5;
 static float32_t modules_capacitor_voltages_upper_arm[total_number_of_modules_arm]; // Upper arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
 static uint8_t modules_indexes_upper_arm[total_number_of_modules_arm]; // Upper arm modules indexes to be sorted with the capacitor voltage vector
 static float32_t modules_capacitor_voltages_lower_arm[3]; // Lower arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
@@ -715,6 +715,7 @@ void setup_routine()
         scope.start();
 
         memcpy(modules_indexes_upper_arm, index_list, total_number_of_modules_arm);
+        memcpy(modules_indexes_lower_arm, index_list, total_number_of_modules_arm);
     }
 }
 
