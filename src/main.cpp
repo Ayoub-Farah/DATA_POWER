@@ -72,12 +72,12 @@ constexpr uint8_t MMC_SM_LAST = MMC_SM10;
 
 /* -------------- BOARD IDENTIFICATION ----------------------- */
 
-constexpr uint32_t UID_MMC_LEAD_BOARD = 0x00330054;
-constexpr uint32_t UID_MMC_SM1_BOARD = 0x0033004B;
-constexpr uint32_t UID_MMC_SM2_BOARD = 0x00330049;
-constexpr uint32_t UID_MMC_SM3_BOARD = 0x0033004C;
-constexpr uint32_t UID_MMC_SM4_BOARD = 0x11116666;
-constexpr uint32_t UID_MMC_SM5_BOARD = 0x11117777;
+constexpr uint32_t UID_MMC_LEAD_BOARD = 0x002B002A;
+constexpr uint32_t UID_MMC_SM1_BOARD = 0x00330054;
+constexpr uint32_t UID_MMC_SM2_BOARD = 0x0033004B;
+constexpr uint32_t UID_MMC_SM3_BOARD = 0x00330049;
+constexpr uint32_t UID_MMC_SM4_BOARD = 0x0033004C;
+constexpr uint32_t UID_MMC_SM5_BOARD = 0x0031001B;
 constexpr uint32_t UID_MMC_SM6_BOARD = 0x11118888;
 constexpr uint32_t UID_MMC_SM7_BOARD = 0x11119999;
 constexpr uint32_t UID_MMC_SM8_BOARD = 0x1111AAA0;
@@ -499,22 +499,13 @@ static bool enable_acq; // Sets trigger moment if true
 static const uint16_t NB_DATAS = 1028; // Number of data acquired
 static ScopeMimicry scope(NB_DATAS, 10); // Scope configuration with 5 channels
 static bool is_downloading; // Records data if true
-
-/* SM switching variables */
-
-static float32_t number_of_connected_submodules_upper_arm;
-static float32_t number_of_connected_submodules_lower_arm;
-static uint8_t seq_u[6] = {1, 2, 3, 2, 1, 0}; // Connection sequence for upper arm
-static uint8_t seq_l[6] = {2, 1, 0, 1, 2, 3}; // Connection sequence for lower arm
-static uint8_t counter_seq = 0;
-static uint32_t sw_timer = 0;
 static uint32_t scope_timer = 0;
-// static uint32_t f_sw = 2; // 2 Hz = 0.5 s to transition;
-// static uint32_t sw_period = 1/(f_sw*control_task_period)*1000000; // 2 Hz = 0.5 s frequency to transition to next connection sequence value;
-static uint32_t sw_period = 1000; // 2 Hz = 0.5 s period to transition to next connection sequence value;
 static uint32_t scope_period = 1; // scope acquire data every t = scope_period * critical_task_period (100 µs) s;
 
 /* CVB variables */
+
+static float32_t number_of_connected_submodules_upper_arm;
+static float32_t number_of_connected_submodules_lower_arm;
 static float32_t modules_capacitor_voltages_upper_arm[3] = {3.0,5.0,4.0}; // Upper arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
 static uint8_t modules_indexes_upper_arm[3] = {0,1,2}; // Upper arm modules indexes to be sorted with the capacitor voltage vector
 static float32_t modules_capacitor_voltages_lower_arm[3] = {3.0,5.0,4.0}; // Lower arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
@@ -604,7 +595,7 @@ static void update_measurements(void)
     if (latest != NO_VALUE)
     {
         I1_low_value = latest;
-        Arm_current = I1_low_value;
+        Arm_current = -I1_low_value;
     }
 }
 
@@ -881,21 +872,7 @@ void loop_critical_task()
         /* The lead sends commands to the followers */
         if (module_ID == MMC_LEAD)
         {
-            // /* Connection sequence triangular format generation */
-            // if (sw_timer == sw_period)
-            // {
-            //     if (counter_seq >= 6)
-            //     {
-            //         counter_seq = 0;
-            //     }
-            //     number_of_connected_submodules_upper_arm = (float)seq_u[counter_seq]; // recuperate for scope
-            //     number_of_connected_submodules_lower_arm = (float)seq_l[counter_seq]; // recuperate for scope
-            //     counter_seq++;
-            //     sw_timer = 0;
-            // }
-
             /* Connection sequence from NLM */
-
             angle += w0 * Ts;
             angle = ot_modulo_2pi(angle);
             m = 1;
@@ -905,29 +882,45 @@ void loop_critical_task()
             number_of_connected_submodules_upper_arm = round(total_number_of_modules_arm*modulation_signal_upper); // recuperate for scope
             number_of_connected_submodules_lower_arm = round(total_number_of_modules_arm*modulation_signal_lower); // recuperate for scope
 
-            memcpy(modules_capacitor_voltages_upper_arm, MMC_capacitor_voltage, 3 * sizeof(float32_t));
-            i_upper_arm, MMC_arm_current[0];
-            // memcpy(modules_capacitor_voltages_lower_arm, &MMC_capacitor_voltage[3], 3 * sizeof(float32_t));
+            /* Gate assignment with preference order M1 > M2 > M3 */
+            // if (number_of_connected_submodules_upper_arm == 0)
+            // {
+            //     g_u[0] = 0;
+            //     g_u[1] = 0;
+            //     g_u[2] = 0;
+            // }
+            // if (number_of_connected_submodules_upper_arm == 1)
+            // {
+            //     g_u[0] = 1;
+            //     g_u[1] = 0;
+            //     g_u[2] = 0;
+            // }
+            // if (number_of_connected_submodules_upper_arm == 2)
+            // {
+            //     g_u[0] = 1;
+            //     g_u[1] = 1;
+            //     g_u[2] = 0;
+            // }
+            // if (number_of_connected_submodules_upper_arm == 3)
+            // {
+            //     g_u[0] = 1;
+            //     g_u[1] = 1;
+            //     g_u[2] = 1;
+            // }
 
-            sorting(); // Executes the CVB algorithm, chosing which modules to connect
-
-            /* Gate assignment with preference from CVB algorithm */
-            g_u_1 = (float)g_u[0];  // recuperate for scope acquisition
-            g_u_2 = (float)g_u[1];  // recuperate for scope acquisition
-            g_u_3 = (float)g_u[2];  // recuperate for scope acquisition
-
-            g_l_1 = (float)g_l[0];  // recuperate for scope acquisition
-            g_l_2 = (float)g_l[1];  // recuperate for scope acquisition
-            g_l_3 = (float)g_l[2];  // recuperate for scope acquisition
-
-            /* Scope data acquisition */
-            if (scope_timer == scope_period)
+            for(uint8_t counter = 0; counter < total_number_of_modules_arm; counter++) // Choses the modules to connect according to chosen indexes
             {
-                scope.acquire();
-                scope_timer = 0;
+                if(counter < number_of_connected_submodules_upper_arm)
+                {
+                    uint8_t index_smallest_voltage_capacitor_upper_arm = modules_indexes_upper_arm[counter];
+                    g_u[index_smallest_voltage_capacitor_upper_arm] = 1;
+                }
+                else{
+                    uint8_t index_smallest_voltage_capacitor_upper_arm = modules_indexes_upper_arm[counter];
+                    g_u[index_smallest_voltage_capacitor_upper_arm] = 0;
+                }
+
             }
-            sw_timer++;
-            scope_timer++;
 
             dataTX_mmc.sm_insertion.raw = 0U;
             mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM1, g_u[0] != 0U);
@@ -943,6 +936,22 @@ void loop_critical_task()
             mmc_frame_set_current_raw(dataTX_mmc, mmc_encode_current(Arm_current));
             memcpy(buffer_tx, &dataTX_mmc, sizeof(dataTX_mmc));
             communication.rs485.startTransmission();
+
+            g_u_1 = (float)g_u[0];  // recuperate for scope acquisition
+            g_u_2 = (float)g_u[1];  // recuperate for scope acquisition
+            g_u_3 = (float)g_u[2];  // recuperate for scope acquisition
+
+            g_l_1 = (float)g_l[0];  // recuperate for scope acquisition
+            g_l_2 = (float)g_l[1];  // recuperate for scope acquisition
+            g_l_3 = (float)g_l[2];  // recuperate for scope acquisition
+
+            /* Scope data acquisition */
+            if (scope_timer == scope_period)
+            {
+                scope.acquire();
+                scope_timer = 0;
+            }
+            scope_timer++;
         }
         else
         {
