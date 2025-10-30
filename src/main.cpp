@@ -504,19 +504,20 @@ static uint32_t scope_period = 1; // scope acquire data every t = scope_period *
 
 /* CVB variables */
 
+static uint8_t index_list[10] = {0,1,2,3,4,5,6,7,8,9}; // Upper arm modules indexes to be sorted with the capacitor voltage vector
 static float32_t number_of_connected_submodules_upper_arm;
 static float32_t number_of_connected_submodules_lower_arm;
-static float32_t modules_capacitor_voltages_upper_arm[3] = {3.0,5.0,4.0}; // Upper arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
-static uint8_t modules_indexes_upper_arm[3] = {0,1,2}; // Upper arm modules indexes to be sorted with the capacitor voltage vector
-static float32_t modules_capacitor_voltages_lower_arm[3] = {3.0,5.0,4.0}; // Lower arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
-static uint8_t modules_indexes_lower_arm[3] = {0,1,2}; // Lower arm modules indexes to be sorted with the capacitor voltage vector
-static uint8_t total_number_of_modules_arm= 3;
+static const uint8_t total_number_of_modules_arm = 3;
+static float32_t modules_capacitor_voltages_upper_arm[total_number_of_modules_arm]; // Upper arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
+static uint8_t modules_indexes_upper_arm[total_number_of_modules_arm]; // Upper arm modules indexes to be sorted with the capacitor voltage vector
+static float32_t modules_capacitor_voltages_lower_arm[3]; // Lower arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
+static uint8_t modules_indexes_lower_arm[total_number_of_modules_arm]; // Lower arm modules indexes to be sorted with the capacitor voltage vector
 static float32_t i_upper_arm= 1.0F; // Upper arm current, to be substituted by measured current when implementing MMC
 static float32_t i_lower_arm= -1.0F; // Lower arm current, to be substituted by measured current when implementing MMC
 
 /* Gate logic */
-uint8_t g_u[3] = {0,0,0}; // Gate signals to send to the upper modules
-uint8_t g_l[3] = {0,0,0}; // Gate signals to send to the lower modules
+uint8_t g_u[total_number_of_modules_arm]; // Gate signals to send to the upper modules
+uint8_t g_l[total_number_of_modules_arm]; // Gate signals to send to the lower modules
 static float32_t g_u_1;
 static float32_t g_u_2;
 static float32_t g_u_3;
@@ -712,6 +713,8 @@ void setup_routine()
         scope.set_trigger(&a_trigger);
         scope.set_delay(0.0F);
         scope.start();
+
+        memcpy(modules_indexes_upper_arm, index_list, total_number_of_modules_arm);
     }
 }
 
