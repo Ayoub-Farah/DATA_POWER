@@ -510,7 +510,7 @@ static float32_t number_of_connected_submodules_lower_arm;
 static const uint8_t total_number_of_modules_arm = 5;
 static float32_t modules_capacitor_voltages_upper_arm[total_number_of_modules_arm]; // Upper arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
 static uint8_t modules_indexes_upper_arm[total_number_of_modules_arm]; // Upper arm modules indexes to be sorted with the capacitor voltage vector
-static float32_t modules_capacitor_voltages_lower_arm[3]; // Lower arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
+static float32_t modules_capacitor_voltages_lower_arm[total_number_of_modules_arm]; // Lower arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
 static uint8_t modules_indexes_lower_arm[total_number_of_modules_arm]; // Lower arm modules indexes to be sorted with the capacitor voltage vector
 static float32_t i_upper_arm= 1.0F; // Upper arm current, to be substituted by measured current when implementing MMC
 static float32_t i_lower_arm= -1.0F; // Lower arm current, to be substituted by measured current when implementing MMC
@@ -786,76 +786,6 @@ void loop_background_task()
     task.suspendBackgroundMs(2000);
 }
 
-/* Capacitor Voltage Balancing (CVB) algorithm implementation */
-void sorting()
-{
-    uint8_t counter_loops_sorting = 0;
-    while(counter_loops_sorting < 10){ // Sorts modules indexes according to capacitor voltage
-            for(uint8_t counter = 0; counter < total_number_of_modules_arm-1; counter++)
-            {
-                if(modules_capacitor_voltages_upper_arm[counter] > modules_capacitor_voltages_upper_arm[counter + 1])
-                {
-                    float32_t temp = modules_capacitor_voltages_upper_arm[counter];
-                    modules_capacitor_voltages_upper_arm[counter] = modules_capacitor_voltages_upper_arm[counter + 1];
-                    modules_capacitor_voltages_upper_arm[counter + 1] = temp;
-                    float32_t temp2 = modules_indexes_upper_arm[counter];
-                    modules_indexes_upper_arm[counter] = modules_indexes_upper_arm[counter + 1];
-                    modules_indexes_upper_arm[counter + 1] = temp2;
-                }
-
-                if(modules_capacitor_voltages_lower_arm[counter] > modules_capacitor_voltages_lower_arm[counter + 1])
-                {
-                    float32_t temp = modules_capacitor_voltages_lower_arm[counter];
-                    modules_capacitor_voltages_lower_arm[counter] = modules_capacitor_voltages_lower_arm[counter + 1];
-                    modules_capacitor_voltages_lower_arm[counter + 1] = temp;
-                    float32_t temp2 = modules_indexes_lower_arm[counter];
-                    modules_indexes_lower_arm[counter] = modules_indexes_lower_arm[counter + 1];
-                    modules_indexes_lower_arm[counter + 1] = temp2;
-                }
-            }
-
-            counter_loops_sorting++;
-        }
-    g_u[0] = 0;
-    g_u[1] = 0;
-    g_u[2] = 0;
-    g_l[0] = 0;
-    g_l[1] = 0;
-    g_l[2] = 0;
-    
-    for(uint8_t counter = 0; counter < total_number_of_modules_arm; counter++) // Choses the modules to connect according to sorted indexes
-        {
-            if(counter < number_of_connected_submodules_upper_arm)
-                {
-                    if(i_upper_arm>=0)
-                    {
-                        uint8_t index_smallest_voltage_capacitor_upper_arm = modules_indexes_upper_arm[counter];
-                        g_u[index_smallest_voltage_capacitor_upper_arm] = 1;
-                    }
-                    else{
-                        uint8_t higher_index = total_number_of_modules_arm-1-counter;
-                        uint8_t index_highest_voltage_capacitor_upper_arm = modules_indexes_upper_arm[higher_index];
-                        g_u[index_highest_voltage_capacitor_upper_arm] = 1;
-                    }
-
-                }
-            if(counter < number_of_connected_submodules_lower_arm)
-                {
-                    if(i_lower_arm>=0)
-                    {
-                        uint8_t index_smallest_voltage_capacitor_lower_arm = modules_indexes_lower_arm[counter];
-                        g_l[index_smallest_voltage_capacitor_lower_arm] = 1;
-                    }
-                    else{
-                        uint8_t higher_index = total_number_of_modules_arm-1-counter;
-                        uint8_t index_highest_voltage_capacitor_lower_arm = modules_indexes_lower_arm[higher_index];
-                        g_l[index_highest_voltage_capacitor_lower_arm] = 1;
-                    }
-                }
-        }
-
-}
-
 /**
  * Uncomment lines in setup_routine() to use critical task.
  *
@@ -887,30 +817,6 @@ void loop_critical_task()
             number_of_connected_submodules_lower_arm = round(total_number_of_modules_arm*modulation_signal_lower); // recuperate for scope
 
             /* Gate assignment with preference order M1 > M2 > M3 */
-            // if (number_of_connected_submodules_upper_arm == 0)
-            // {
-            //     g_u[0] = 0;
-            //     g_u[1] = 0;
-            //     g_u[2] = 0;
-            // }
-            // if (number_of_connected_submodules_upper_arm == 1)
-            // {
-            //     g_u[0] = 1;
-            //     g_u[1] = 0;
-            //     g_u[2] = 0;
-            // }
-            // if (number_of_connected_submodules_upper_arm == 2)
-            // {
-            //     g_u[0] = 1;
-            //     g_u[1] = 1;
-            //     g_u[2] = 0;
-            // }
-            // if (number_of_connected_submodules_upper_arm == 3)
-            // {
-            //     g_u[0] = 1;
-            //     g_u[1] = 1;
-            //     g_u[2] = 1;
-            // }
 
             for(uint8_t counter = 0; counter < total_number_of_modules_arm; counter++) // Choses the modules to connect according to chosen indexes
             {
@@ -927,11 +833,6 @@ void loop_critical_task()
             }
 
             dataTX_mmc.sm_insertion.raw = 0U;
-            // mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM1, g_u[0] != 0U);
-            // mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM2, g_u[1] != 0U);
-            // mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM3, g_u[2] != 0U);
-            // mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM4, g_u[3] != 0U);
-            // mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM5, g_u[4] != 0U);
 
             for (uint8_t counter = 0; counter < total_number_of_modules_arm; counter++) {
                 mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM1 + counter, g_u[counter] != 0U);
