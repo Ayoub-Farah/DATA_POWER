@@ -694,6 +694,9 @@ void setup_routine()
 
     shield.sensors.enableDefaultTwistSensors();
 
+    shield.power.disconnectCapacitor(LEG1);
+    shield.power.disconnectCapacitor(LEG2);
+
     /* Finally, start tasks */
     task.startBackground(background_task_number);
     /* Uncomment following line if you use the critical task */
