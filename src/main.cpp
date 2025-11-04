@@ -509,7 +509,7 @@ static uint8_t index_list[10] = {0,1,2,3,4,5,6,7,8,9}; // Upper arm modules inde
 static float32_t number_of_connected_submodules_upper_arm;
 static float32_t number_of_connected_submodules_lower_arm;
 static float32_t number_of_connected_submodules_upper_arm_past = 0.F;
-static const uint8_t total_number_of_modules_arm = 3;
+static const uint8_t total_number_of_modules_arm = 5;
 static float32_t modules_capacitor_voltages_upper_arm[total_number_of_modules_arm]; // Upper arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
 static uint8_t modules_indexes_upper_arm[total_number_of_modules_arm]; // Upper arm modules indexes to be sorted with the capacitor voltage vector
 static float32_t modules_capacitor_voltages_lower_arm[total_number_of_modules_arm]; // Lower arm modules capacitor voltages artificially generated, to be substituted by measured current when implementing MMC
@@ -718,7 +718,7 @@ void setup_routine()
         scope.connectChannel(g_u_2, "g_u_2");
         scope.connectChannel(g_u_3, "g_u_3");
         scope.connectChannel(MMC_capacitor_voltage[0], "v_c_1");
-        scope.connectChannel(MMC_capacitor_voltage[2], "v_c_2");
+        scope.connectChannel(MMC_capacitor_voltage[1], "v_c_2");
         scope.connectChannel(MMC_capacitor_voltage[2], "v_c_3");
         scope.set_trigger(&a_trigger);
         scope.set_delay(0.0F);
@@ -898,7 +898,7 @@ void loop_critical_task()
             if (number_of_connected_submodules_upper_arm != number_of_connected_submodules_upper_arm_past){
                 // delta_number_of_connected_submodules_upper_arm = number_of_connected_submodules_upper_arm - number_of_connected_submodules_upper_arm_past;
                 
-                memcpy(modules_capacitor_voltages_upper_arm, MMC_capacitor_voltage, 3 * sizeof(float32_t));
+                memcpy(modules_capacitor_voltages_upper_arm, MMC_capacitor_voltage, total_number_of_modules_arm * sizeof(float32_t));
 
                 i_upper_arm = MMC_arm_current[0];
                 i_lowfilter_value = i_low_filter.calculateWithReturn(i_upper_arm); // filtered current value
@@ -1009,6 +1009,12 @@ void loop_critical_task()
             communication.rs485.startTransmission();
             send_idle = true; // Set the flag to send idle command
         }
+
+        if (pwm_enable == true)
+        {
+            shield.power.stop(ALL);
+        }
+        pwm_enable = false;
     }
     counter_timer++;
 }
