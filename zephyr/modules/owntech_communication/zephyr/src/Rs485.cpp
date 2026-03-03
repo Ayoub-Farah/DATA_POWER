@@ -171,6 +171,7 @@ void serial_init(void)
     uart_configure(uart_dev, &uart_cfg);
 
     LL_USART_ConfigAsyncMode(USART3);
+    LL_USART_EnableOverrunDetect(USART3);
 
     /* Enable DMA request*/
     LL_USART_EnableDMAReq_TX(USART3);
@@ -375,4 +376,37 @@ void serial_stop()
 void serial_start()
 {
     LL_USART_Enable(USART3);
+}
+
+/**
+ * This function is used to recover the RX DMA if an overrun error occurs.
+ * It checks if the overrun error flag is set, and if so, it clears the overrun state and 
+ * re-arms the RX DMA channel to continue receiving data. 
+ * See https://github.com/owntech-foundation/MMC/issues/6
+ */
+int8_t reinitialize_rx_dma_if_overrun()
+{
+    if (LL_USART_IsActiveFlag_ORE(USART3) == 0U)
+    {
+        return -1;
+    }
+
+    /* Clear UART RX overrun state first. */
+    LL_USART_RequestRxDataFlush(USART3);
+    LL_USART_ClearFlag_ORE(USART3);
+
+    /* Re-arm circular RX DMA from the beginning */
+    LL_DMA_DisableChannel(DMA_USART, LL_DMA_CHANNEL_RX);
+    LL_DMA_ClearFlag_TC7(DMA_USART);
+    LL_DMA_ClearFlag_HT7(DMA_USART);
+    LL_DMA_ClearFlag_TE7(DMA_USART);
+    LL_DMA_SetMemoryAddress(DMA_USART,
+                            LL_DMA_CHANNEL_RX,
+                            (uint32_t)(rx_usart_val));
+    LL_DMA_SetDataLength(DMA_USART, LL_DMA_CHANNEL_RX, dma_buffer_size);
+    LL_DMA_EnableIT_TC(DMA_USART, LL_DMA_CHANNEL_RX);
+    LL_DMA_DisableIT_HT(DMA_USART, LL_DMA_CHANNEL_RX);
+    LL_DMA_EnableChannel(DMA_USART, LL_DMA_CHANNEL_RX);
+
+    return 0;
 }

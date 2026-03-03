@@ -32,6 +32,10 @@
 #include "hrtim.h"
 #include "SpinAPI.h"
 
+#ifdef CONFIG_OWNTECH_COMMUNICATION
+#include "CommunicationAPI.h"
+#endif
+
 #ifdef CONFIG_OWNTECH_SAFETY_API
 #include "safety_internal.h"
 #include "SafetyAPI.h"
@@ -106,6 +110,11 @@ void thread_error(void *, void *, void *)
 
 void user_task_proxy()
 {
+
+#ifdef CONFIG_OWNTECH_COMMUNICATION
+communication.rs485.reinitializeRxDmaIfOverrun();
+#endif
+
 #ifdef CONFIG_OWNTECH_SAFETY_API
 
 	if (safety_task() != 0) safety_alert = true;
