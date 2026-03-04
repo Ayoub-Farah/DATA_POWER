@@ -31,6 +31,7 @@
 /* Zephyr drivers */
 #include <zephyr/drivers/uart.h>
 #include <zephyr/drivers/dma.h>
+#include <zephyr/irq.h>
 
 /* Header */
 #include "Rs485.h"
@@ -107,9 +108,16 @@ static void _dma_callback_tx(const struct device *dev,
 }
 
 /**
- *  DMA callback RX clear reception flag, then call user functions
+ *  RX handler body shared by:
+ *  - direct ZLI IRQ path (primary path)
+ *  - Zephyr DMA callback path (fallback/safety path)
+ *
+ *  Note: there is only one hardware IRQ line for this DMA channel.
+ *  In nominal behavior, IRQ 17 is handled by _dma_callback_rx_direct().
+ *  The Zephyr callback exists to keep dma_config() ownership/tracking valid
+ *  and as a fallback if IRQ routing is changed later.
  */
-static void _dma_callback_rx()
+static void _dma_callback_rx_common()
 {
     /* Clear transmission complete flag */
     LL_DMA_ClearFlag_TC7(DMA_USART);
@@ -117,6 +125,34 @@ static void _dma_callback_rx()
     if(user_fnc != NULL){
         user_fnc();
     }
+}
+
+/**
+ *  DMA callback RX direct ISR (ZLI path).
+ */
+ISR_DIRECT_DECLARE(_dma_callback_rx_direct)
+{
+    _dma_callback_rx_common();
+
+    /* No scheduling decision from this ISR path */
+    return 0;
+}
+
+/**
+ *  DMA callback RX wrapper for Zephyr DMA driver API.
+ *  This path is not expected in nominal ZLI configuration.
+ */
+static void _dma_callback_rx_zephyr(const struct device *dev,
+                                    void *user_data,
+                                    uint32_t channel,
+                                    int status)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(user_data);
+    ARG_UNUSED(channel);
+    ARG_UNUSED(status);
+
+    _dma_callback_rx_common();
 }
 
 /* Public functions */
@@ -298,6 +334,7 @@ void dma_channel_init_tx()
 void dma_channel_init_rx()
 {
     /* Configure DMA */
+    struct dma_config dma_config_s = {0};
     LL_DMA_InitTypeDef DMA_InitStruct = {0};
 
     /* Initialization of DMA */
@@ -312,7 +349,16 @@ void dma_channel_init_rx()
     DMA_InitStruct.PeriphRequest = LL_DMAMUX_REQ_USART3_RX;
     DMA_InitStruct.NbData = dma_buffer_size;
 
-    IRQ_DIRECT_CONNECT(17, 0, _dma_callback_rx, IRQ_ZERO_LATENCY);
+    /*
+     * Register RX channel usage in Zephyr DMA driver.
+     * This does not create a second hardware interrupt path by itself.
+     */
+    dma_config_s.dma_callback = _dma_callback_rx_zephyr;
+    dma_config_s.linked_channel = STM32_DMA_HAL_OVERRIDE;
+    dma_config(dma1, ZEPHYR_DMA_CHANNEL_RX, &dma_config_s);
+
+    /* Bind DMA1 channel IRQ line (17) to the direct zero-latency ISR. */
+    IRQ_DIRECT_CONNECT(17, 0, _dma_callback_rx_direct, IRQ_ZERO_LATENCY);
     irq_enable(17);
 
     /* Disabling channel for initial set-up */
