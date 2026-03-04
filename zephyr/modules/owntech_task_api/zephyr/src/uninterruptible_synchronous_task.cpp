@@ -27,6 +27,10 @@
 /* Current module */
 #include "scheduling_common.h"
 
+/* Zephyr */
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/atomic.h>
+
 /* OwnTech Power API */
 #include "timer.h"
 #include "hrtim.h"
@@ -39,6 +43,13 @@
 #ifdef CONFIG_OWNTECH_SAFETY_API
 #include "safety_internal.h"
 #include "SafetyAPI.h"
+#endif
+
+#if defined(CONFIG_OWNTECH_SAFETY_API) || \
+	(defined(CONFIG_OWNTECH_COMMUNICATION) && \
+	 defined(CONFIG_OWNTECH_COMMUNICATION_ENABLE_RS485))
+
+LOG_MODULE_REGISTER(owntech_task_api, LOG_LEVEL_INF);
 
 /* Size of stack area used by error thread */
 #define STACKSIZE 512
@@ -72,15 +83,26 @@ static bool do_data_dispatch = false;
 static uint32_t task_period = 0;
 
 /* Safety */
+#ifdef CONFIG_OWNTECH_SAFETY_API
 static bool safety_alert = false;
+#endif
+
+#if defined(CONFIG_OWNTECH_COMMUNICATION) && \
+	defined(CONFIG_OWNTECH_COMMUNICATION_ENABLE_RS485)
+static atomic_t rs485_overrun_pending = ATOMIC_INIT(0);
+static atomic_t rs485_overrun_count = ATOMIC_INIT(0);
+#endif
 
 /* Private API */
 
-#ifdef CONFIG_OWNTECH_SAFETY_API
+#if defined(CONFIG_OWNTECH_SAFETY_API) || \
+	(defined(CONFIG_OWNTECH_COMMUNICATION) && \
+	 defined(CONFIG_OWNTECH_COMMUNICATION_ENABLE_RS485))
 void thread_error(void *, void *, void *)
 {
 	while (1)
 	{
+#ifdef CONFIG_OWNTECH_SAFETY_API
 		if (safety_alert)
 		{
 			printk("SAFETY ERROR : reset the MCU \n");
@@ -102,6 +124,19 @@ void thread_error(void *, void *, void *)
 			#endif
 
 		}
+#endif
+
+#if defined(CONFIG_OWNTECH_COMMUNICATION) && \
+	defined(CONFIG_OWNTECH_COMMUNICATION_ENABLE_RS485)
+		if (atomic_cas(&rs485_overrun_pending, 1, 0))
+		{
+			uint32_t overrun_count = (uint32_t)atomic_get(&rs485_overrun_count);
+
+			LOG_WRN("RS485 RX overrun detected: RX DMA reinitialized (event #%u). "
+					"One frame may be lost because RX callback is paused during overrun.",
+					(unsigned int)overrun_count);
+		}
+#endif
 
 		k_msleep(200);
 	}
@@ -111,8 +146,13 @@ void thread_error(void *, void *, void *)
 void user_task_proxy()
 {
 
-#ifdef CONFIG_OWNTECH_COMMUNICATION
-communication.rs485.reinitializeRxDmaIfOverrun();
+#if defined(CONFIG_OWNTECH_COMMUNICATION) && \
+	defined(CONFIG_OWNTECH_COMMUNICATION_ENABLE_RS485)
+	if (communication.rs485.reinitializeRxDmaIfOverrun() == 0)
+	{
+		atomic_inc(&rs485_overrun_count);
+		atomic_set(&rs485_overrun_pending, 1);
+	}
 #endif
 
 #ifdef CONFIG_OWNTECH_SAFETY_API
