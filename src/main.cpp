@@ -18,7 +18,7 @@
  */
 
 /**
- * @brief  This example deploys the open-loop control of a MMC arm integrating a Capacitor Voltage Balancing algorithm. 
+ * @brief  This example deploys the open-loop control of a MMC arm integrating a Capacitor Voltage Balancing algorithm using duty cycle ramping to reduce high-frequency oscillations from low-side LC filter. 
  *         This research was funded in whole by the French National Research Agency (ANR) under the project CARROTS "ANR-24-CE05-0920-01".
  *
  * @author Ayoub Farah Hassan <ayoub.farah-hassan@laas.fr>
@@ -85,16 +85,30 @@ constexpr float32_t overcurrent_tolerance = 8.0F; //[A] Set overcurrent toleranc
 /* --------------- To be changed by user --------------------- */
 
 constexpr uint32_t UID_MMC_LEAD_BOARD = 0x002B002A;
-constexpr uint32_t UID_MMC_SM1_BOARD = 0x00330054;
-constexpr uint32_t UID_MMC_SM2_BOARD = 0x0033004B;
+constexpr uint32_t UID_MMC_SM1_BOARD = 0x0031001B;
+constexpr uint32_t UID_MMC_SM2_BOARD = 0x0033004C;
 constexpr uint32_t UID_MMC_SM3_BOARD = 0x00330049;
-constexpr uint32_t UID_MMC_SM4_BOARD = 0x0033004C;
-constexpr uint32_t UID_MMC_SM5_BOARD = 0x0031001B;
-constexpr uint32_t UID_MMC_SM6_BOARD = 0x11118888;
-constexpr uint32_t UID_MMC_SM7_BOARD = 0x11119999;
-constexpr uint32_t UID_MMC_SM8_BOARD = 0x1111AAA0;
-constexpr uint32_t UID_MMC_SM9_BOARD = 0x1111BBB1;
-constexpr uint32_t UID_MMC_SM10_BOARD = 0x1111CCC2;
+// constexpr uint32_t UID_MMC_SM4_BOARD = 0x0033004C;
+constexpr uint32_t UID_MMC_SM4_BOARD = 0x0033004B;
+constexpr uint32_t UID_MMC_SM5_BOARD = 0x00330054;
+constexpr uint32_t UID_MMC_SM6_BOARD = 0x11119999;
+constexpr uint32_t UID_MMC_SM7_BOARD = 0x1111AAA0;
+constexpr uint32_t UID_MMC_SM8_BOARD = 0x1111BBB1;
+constexpr uint32_t UID_MMC_SM9_BOARD = 0x1111CCC2;
+constexpr uint32_t UID_MMC_SM10_BOARD = 0x1111CCC3;
+
+
+// constexpr uint32_t UID_MMC_LEAD_BOARD = 0x002B002A;
+// constexpr uint32_t UID_MMC_SM1_BOARD = 0x00330054;
+// constexpr uint32_t UID_MMC_SM2_BOARD = 0x0033004B;
+// constexpr uint32_t UID_MMC_SM3_BOARD = 0x00330049;
+// constexpr uint32_t UID_MMC_SM4_BOARD = 0x0033004C;
+// constexpr uint32_t UID_MMC_SM5_BOARD = 0x0031001B;
+// constexpr uint32_t UID_MMC_SM6_BOARD = 0x11118888;
+// constexpr uint32_t UID_MMC_SM7_BOARD = 0x11119999;
+// constexpr uint32_t UID_MMC_SM8_BOARD = 0x1111AAA0;
+// constexpr uint32_t UID_MMC_SM9_BOARD = 0x1111BBB1;
+// constexpr uint32_t UID_MMC_SM10_BOARD = 0x1111CCC2;
 
 /* --------- BOARD IDENTIFICATION functions ------------------ */
 static uint32_t read_board_uid()
@@ -231,7 +245,7 @@ static uint8_t module_command_past; // The command the followers applied in t-1 
 static bool change_state_command = false; // Flag to change the state of the command
 static bool send_idle = false;            // Flag to send idle command from master to followers
 
-constexpr uint8_t MMC_STATUS_CODE_BITS = 3; 
+constexpr uint8_t MMC_STATUS_CODE_BITS = 3;
 constexpr uint32_t MMC_STATUS_CODE_MASK = (1UL << MMC_STATUS_CODE_BITS) - 1U;
 constexpr uint32_t MMC_STATUS_UPPER_ARM_MASK = (1UL << MMC_STATUS_CODE_BITS);
 
@@ -492,10 +506,10 @@ enum serial_interface_menu_mode
 
 serial_interface_menu_mode mode = IDLEMODE;
 
-/* --------------- Firmware and control variables ------------------*/
+/* --------------- Firmware CVB variables ------------------*/
 
 /* [us] period of the control task (=critical task) */
-static uint32_t control_task_period = 100; // µs
+static constexpr uint32_t control_task_period = 100; // µs
 static float32_t Ts = control_task_period * 1e-6F; // s
 /* [bool] state of the PWM (ctrl task) */
 static bool pwm_enable = false;
@@ -538,12 +552,10 @@ static float32_t modules_capacitor_voltages_lower_arm[total_number_of_modules_ar
 static uint8_t modules_indexes_lower_arm[total_number_of_modules_arm]; // Lower arm modules indexes to be sorted with the capacitor voltage vector
 static float32_t i_upper_arm= 1.0F; // Upper arm current - will be updated with physical current measure during test execution
 static float32_t i_lower_arm= -1.0F; // Lower arm current - will be updated with physical current measure during test execution
-static uint8_t gate_change = 0;
-static float32_t delta_N = 0.0;
 
 /* Gate logic */
-uint8_t g_u[total_number_of_modules_arm]; // Gate signals to be sent to the upper modules
-uint8_t g_l[total_number_of_modules_arm]; // Gate signals to be sent to the lower modules
+uint8_t g_u[total_number_of_modules_arm]; // Gate signals to send to the upper modules
+uint8_t g_l[total_number_of_modules_arm]; // Gate signals to send to the lower modules
 static float32_t g_u_1; // Gate signal M1 - Used for gate signal acquisition by scopemimicry
 static float32_t g_u_2; // Gate signal M2 - Used for gate signal acquisition by scopemimicry
 static float32_t g_u_3; // Gate signal M3 - Used for gate signal acquisition by scopemimicry
@@ -560,6 +572,7 @@ static float32_t m = 1; // Modulation amplitude
 static float32_t a = 1; // Modulation dc part
 static float32_t angle;
 static const float w0 = 2 * PI * f0; // Angular frequency
+
 static float32_t modulation_signal_upper; //[pu] Modulation output upper voltage
 static float32_t modulation_signal_lower; //[pu] Modulation output lower voltage
 
@@ -567,6 +580,52 @@ static float32_t modulation_signal_lower; //[pu] Modulation output lower voltage
 
 LowPassFirstOrderFilter i_low_filter(Ts, 180e-6F); // Lowpass filter with tau = 180µs -> fc = 880 Hz
 static float32_t i_lowfilter_value;
+
+/* Oscillations treatment with duty cycle ramping */
+static float32_t duty_cycle = 0.0F; // Applied duty cycle
+static constexpr uint32_t duty_cycle_ramp_size = 4U; // How many intermediate steps
+static float32_t duty_cycle_ramp_up[duty_cycle_ramp_size] = {0.25F, 0.5F, 0.75F, 0.95F}; // Duty cycle ramp in 4 levels to reduce oscillations
+static float32_t duty_cycle_ramp_down[duty_cycle_ramp_size] = {0.75F, 0.5F, 0.25F, 0.0F}; // Duty cycle ramp in 4 levels to reduce oscillations
+static constexpr uint32_t duty_cycle_ramp_step_period_us = 500U; // Intermediate steps period
+static constexpr uint32_t duty_cycle_ramp_step_ticks =
+    (duty_cycle_ramp_step_period_us + control_task_period - 1U) / control_task_period; // Time where the steps are going to be applied
+uint32_t duty_cycle_counter = 0;
+uint32_t duty_cycle_step_counter = 0;
+
+/* Ramping functions */
+static inline void duty_cycle_ramp_reset() // Resets duty cycle ramp
+{
+    duty_cycle_counter = 0U;
+    duty_cycle_step_counter = 0U;
+}
+
+static inline void duty_cycle_ramp_apply(bool module_inserted) // Applied duty cycle ramp
+{
+    const float32_t *ramp = module_inserted ? duty_cycle_ramp_up : duty_cycle_ramp_down; // Ramp up if module is inserted - Ramp down if module is disconnected
+    const float32_t target_final = ramp[duty_cycle_ramp_size - 1U];
+
+    if (duty_cycle_counter < duty_cycle_ramp_size)
+    {
+        if (duty_cycle_step_counter == 0U)
+        {
+            duty_cycle = ramp[duty_cycle_counter];
+            duty_cycle_counter++;
+        }
+
+        duty_cycle_step_counter++;
+        if (duty_cycle_step_counter >= duty_cycle_ramp_step_ticks)
+        {
+            duty_cycle_step_counter = 0U;
+        }
+    }
+    else
+    {
+        duty_cycle = target_final;
+    }
+
+    shield.power.setDutyCycle(LEG1, duty_cycle);
+}
+
 
 /* --------------SETUP FUNCTIONS------------------------------- */
 
@@ -722,10 +781,10 @@ void reception_function(void)
  */
 void setup_routine()
 {
-
     /* Informs the module ID in the terminal */
     const uint32_t board_uid = read_board_uid();
     printk("Board UID: 0x%08" PRIX32 "\n", board_uid);
+    printk("Module ID: %u \n", module_ID);
     master = (module_ID == MMC_LEAD);
 
     config_led_LL(); // Configure the LED pin in Low Level
@@ -749,6 +808,7 @@ void setup_routine()
 
     /* Finally, start tasks */
     task.startBackground(background_task_number);
+
     task.startCritical();
     CommTask_num = task.createBackground(loop_communication_task);
     task.startBackground(CommTask_num);
@@ -782,8 +842,8 @@ void setup_routine()
         scope.start();
 
         /* Copies from general indexes list the module indexes that compose upper and lower arms, respectively */
-        memcpy(modules_indexes_upper_arm, index_list, total_number_of_modules_arm); 
-        memcpy(modules_indexes_lower_arm, index_list, total_number_of_modules_arm); 
+        memcpy(modules_indexes_upper_arm, index_list, total_number_of_modules_arm);
+        memcpy(modules_indexes_lower_arm, index_list, total_number_of_modules_arm);
     }
     else{
         /* Defines module as follower for communication synchorinization */
@@ -895,76 +955,41 @@ void sorting_upper_arm()
 
             counter_loops_sorting++;
         }
+
     /* Choses the modules to connect to the upper arm according to capacitor voltages and arm current */
     for(uint8_t counter = 0; counter < total_number_of_modules_arm; counter++)
-        {            
-            if(delta_N >= 0) // Connect delta_N modules
+        {
+            /* Positive arm current */
+            // Connect modules with smallest capacitor voltages
+            // Disconnect modules with highest capacitor voltages
+
+            if(i_upper_arm>=0)
             {
-                /* Positive arm current */
-                // Connect modules with smallest capacitor voltages
-                if(i_upper_arm>=0)
+                uint8_t index_smallest_voltage_capacitor_upper_arm = modules_indexes_upper_arm[counter];
+                if(counter < number_of_connected_submodules_upper_arm)
                 {
-                    uint8_t index_smallest_voltage_capacitor_upper_arm = modules_indexes_upper_arm[counter];
-                    if(gate_change < delta_N && g_u[index_smallest_voltage_capacitor_upper_arm] == 0)
-                    {
-                        g_u[index_smallest_voltage_capacitor_upper_arm] = 1;
-                        gate_change++;
-                    }
-                    else{
-                        // g_u[index_smallest_voltage_capacitor_upper_arm] = 0;
-                    }
+                    g_u[index_smallest_voltage_capacitor_upper_arm] = 1;
                 }
-
-                /* Negative arm current */
-                // Connect modules with highest capacitor voltages
-                if(i_upper_arm<0)
-                {
-                    uint8_t higher_index = total_number_of_modules_arm-1-counter;
-                    uint8_t index_highest_voltage_capacitor_upper_arm = modules_indexes_upper_arm[higher_index];
-                    if(gate_change < delta_N && g_u[index_highest_voltage_capacitor_upper_arm] == 0)
-                    {
-                        g_u[index_highest_voltage_capacitor_upper_arm] = 1;
-                        gate_change++;
-                    }
-                    else{
-                        // g_u[index_highest_voltage_capacitor_upper_arm] = 0;
-                    }
-                }   
-            }
-            else{ // Disconnect delta_N modules
-
-                /* Positive arm current */
-                // Disconnect modules with highest capacitor voltages
-                if(i_upper_arm>=0)
-                {
-                    
-                    uint8_t higher_index = total_number_of_modules_arm-1-counter;
-                    uint8_t index_highest_voltage_capacitor_upper_arm = modules_indexes_upper_arm[higher_index];
-                    if(gate_change < -delta_N && g_u[index_highest_voltage_capacitor_upper_arm] == 1)
-                    {
-                        g_u[index_highest_voltage_capacitor_upper_arm] = 0;
-                        gate_change++;
-                    }
-                    else{
-                        // g_u[index_highest_voltage_capacitor_upper_arm] = 1;
-                    }
-                }
-
-                /* Negative arm current */
-                // Disconnect modules with smallest capacitor voltages
-                if(i_upper_arm<0)
-                {
-                    uint8_t index_smallest_voltage_capacitor_upper_arm = modules_indexes_upper_arm[counter];
-                    if(gate_change < -delta_N && g_u[index_smallest_voltage_capacitor_upper_arm] == 1)
-                    {
-                        g_u[index_smallest_voltage_capacitor_upper_arm] = 0;
-                        gate_change++;
-                    }
-                    else{
-                        // g_u[index_smallest_voltage_capacitor_upper_arm] = 1;
-                    }
+                else{
+                    g_u[index_smallest_voltage_capacitor_upper_arm] = 0;
                 }
             }
+
+            /* Negative arm current */
+            // Connect modules with highest capacitor voltages
+            // Disconnect modules with smallest capacitor voltages
+            if(i_upper_arm<0)
+            {
+                uint8_t higher_index = total_number_of_modules_arm-1-counter;
+                uint8_t index_highest_voltage_capacitor_upper_arm = modules_indexes_upper_arm[higher_index];
+                if(counter < number_of_connected_submodules_upper_arm)
+                {
+                    g_u[index_highest_voltage_capacitor_upper_arm] = 1;
+                }
+                else{
+                    g_u[index_highest_voltage_capacitor_upper_arm] = 0;
+                }
+            }   
         }
 
 }
@@ -983,6 +1008,7 @@ void loop_critical_task()
 
     if (mode == POWERMODE)
     {
+        
         if (module_ID == MMC_LEAD) //CONTROL INSIDE LEAD - Modulation NLM + CVB algorithm execution
         {
             /* Modulation signal generation in open-loop */
@@ -993,7 +1019,7 @@ void loop_critical_task()
             modulation_signal_lower = (a - m * ot_sin(angle)) / (2.0);
 
             /* Number of modules N_on to be connected on the arm according to modulation signal by Nearest Level Modulation (NLM)  */
-            number_of_connected_submodules_upper_arm = round(total_number_of_modules_arm*modulation_signal_upper);
+            number_of_connected_submodules_upper_arm = round(total_number_of_modules_arm*modulation_signal_upper); 
             number_of_connected_submodules_lower_arm = round(total_number_of_modules_arm*modulation_signal_lower);
 
             /* Updating arm current measurements and filtering */
@@ -1005,15 +1031,11 @@ void loop_critical_task()
             // Executed only when N_on changes
             if (number_of_connected_submodules_upper_arm != number_of_connected_submodules_upper_arm_past){
                 
-                /* Computes Delta N = N_on - N_on_past */
-                delta_N = number_of_connected_submodules_upper_arm - number_of_connected_submodules_upper_arm_past;
-                gate_change = 0;
-
                 /* Updating capacitor voltages measurements */
                 memcpy(modules_capacitor_voltages_upper_arm, MMC_capacitor_voltage, total_number_of_modules_arm * sizeof(float32_t));
 
                 /* Executes the CVB algorithm, chosing which modules to connect */
-                sorting_upper_arm();
+                sorting_upper_arm(); 
                 number_of_connected_submodules_upper_arm_past = number_of_connected_submodules_upper_arm;
             }
 
@@ -1056,54 +1078,27 @@ void loop_critical_task()
         }
         else //CONTROL INSIDE MODULE - own switching only
         {
-            
+            Led_turnON_LL();
             /* Verifies if module received command changed */
             if (module_comand != module_command_past)
             {
                 change_state_command = true; // Set the flag to change the state
+                duty_cycle_ramp_reset();
             }
 
-            //If command is 1, module changes to connected state
-            if (module_comand)
-            {
-                if (change_state_command)
-                {
-                    change_state_command = false; // Reset the flag
-                }
-                shield.power.setDutyCycle(LEG1,1.0); // Duty cycle = 1 makes Q1 closed and Q2 open
-                if (!pwm_enable)
-                {
-                    pwm_enable = true;
-                    shield.power.start(LEG1);
-                }
-            }
-            //if command is 2, module changes to blocked state (not used)
-            else if (module_comand == 2)
-            {
-                if (change_state_command)
-                {
-                    change_state_command = false; // Reset the flag
-                }
-                if (pwm_enable == true)
-                {
-                    shield.power.stop(ALL); // Makes Q1 open and Q2 open
-                }
-                pwm_enable = false;
-            }
+            /* module_comand comes from a bit-packed insertion flag (0 or 1). */
+            const bool module_inserted = (module_comand != 0U); //If command is 1, module changes to connected state - If command is 0, module changes to disconnected state 
 
-            //if command is 0, module changes to disconnected state
-            else
+            if (change_state_command)
             {
-                if (change_state_command)
-                {
-                    change_state_command = false; // Reset the flag
-                }
-                shield.power.setDutyCycle(LEG1,0.0); // Duty cycle = 0 makes Q1 open and Q2 closed
-                if (!pwm_enable)
-                {
-                    pwm_enable = true;
-                    shield.power.start(LEG1);
-                }
+                change_state_command = false; // Reset the flag
+            }
+            duty_cycle_ramp_apply(module_inserted);
+
+            if (!pwm_enable)
+            {
+                pwm_enable = true;
+                shield.power.start(LEG1);
             }
             critical_task_timer++;
         } 
@@ -1112,14 +1107,10 @@ void loop_critical_task()
     }
     else if (mode == IDLEMODE)
     {
+        Led_turnOFF_LL();
         /* Made  such that the LEAD send IDLE flag only once to all modules */
         if (!send_idle && module_ID == MMC_LEAD)
         {
-            g_u[0] = 0;
-            g_u[1] = 0;
-            g_u[2] = 0;
-            g_u[3] = 0;
-            g_u[4] = 0;
             dataTX_mmc.sm_insertion.raw = 0U;
             dataTX_mmc.status.raw = 0U;
             mmc_frame_set_status_code(dataTX_mmc, IDLE);
