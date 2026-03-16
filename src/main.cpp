@@ -97,19 +97,6 @@ constexpr uint32_t UID_MMC_SM8_BOARD = 0x1111BBB1;
 constexpr uint32_t UID_MMC_SM9_BOARD = 0x1111CCC2;
 constexpr uint32_t UID_MMC_SM10_BOARD = 0x1111CCC3;
 
-
-// constexpr uint32_t UID_MMC_LEAD_BOARD = 0x002B002A;
-// constexpr uint32_t UID_MMC_SM1_BOARD = 0x00330054;
-// constexpr uint32_t UID_MMC_SM2_BOARD = 0x0033004B;
-// constexpr uint32_t UID_MMC_SM3_BOARD = 0x00330049;
-// constexpr uint32_t UID_MMC_SM4_BOARD = 0x0033004C;
-// constexpr uint32_t UID_MMC_SM5_BOARD = 0x0031001B;
-// constexpr uint32_t UID_MMC_SM6_BOARD = 0x11118888;
-// constexpr uint32_t UID_MMC_SM7_BOARD = 0x11119999;
-// constexpr uint32_t UID_MMC_SM8_BOARD = 0x1111AAA0;
-// constexpr uint32_t UID_MMC_SM9_BOARD = 0x1111BBB1;
-// constexpr uint32_t UID_MMC_SM10_BOARD = 0x1111CCC2;
-
 /* --------- BOARD IDENTIFICATION functions ------------------ */
 static uint32_t read_board_uid()
 {
@@ -784,7 +771,7 @@ void setup_routine()
     /* Informs the module ID in the terminal */
     const uint32_t board_uid = read_board_uid();
     printk("Board UID: 0x%08" PRIX32 "\n", board_uid);
-    printk("Module ID: %u \n", module_ID);
+    printk("Module ID : %u \n", module_ID);
     master = (module_ID == MMC_LEAD);
 
     config_led_LL(); // Configure the LED pin in Low Level
@@ -1024,8 +1011,8 @@ void loop_critical_task()
 
             /* Updating arm current measurements and filtering */
             i_upper_arm = MMC_arm_current[0];
-            i_lowfilter_value = i_low_filter.calculateWithReturn(i_upper_arm); // filtered current value
-            i_upper_arm = i_lowfilter_value;
+            // i_lowfilter_value = i_low_filter.calculateWithReturn(i_upper_arm); // filtered current value
+            // i_upper_arm = i_lowfilter_value;i
 
             /* Modules choice with Capacitor Voltage Balancing (CVB) sorting */
             // Executed only when N_on changes
@@ -1078,7 +1065,6 @@ void loop_critical_task()
         }
         else //CONTROL INSIDE MODULE - own switching only
         {
-            Led_turnON_LL();
             /* Verifies if module received command changed */
             if (module_comand != module_command_past)
             {
@@ -1107,7 +1093,6 @@ void loop_critical_task()
     }
     else if (mode == IDLEMODE)
     {
-        Led_turnOFF_LL();
         /* Made  such that the LEAD send IDLE flag only once to all modules */
         if (!send_idle && module_ID == MMC_LEAD)
         {
