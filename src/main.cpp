@@ -496,7 +496,7 @@ serial_interface_menu_mode mode = IDLEMODE;
 /* --------------- Firmware CVB variables ------------------*/
 
 /* [us] period of the control task (=critical task) */
-static constexpr uint32_t control_task_period = 100; // µs
+static constexpr uint32_t control_task_period = 200; // µs
 static float32_t Ts = control_task_period * 1e-6F; // s
 /* [bool] state of the PWM (ctrl task) */
 static bool pwm_enable = false;
@@ -565,8 +565,8 @@ static float32_t modulation_signal_lower; //[pu] Modulation output lower voltage
 
 /* Current measurement filter */
 
-LowPassFirstOrderFilter i_low_filter(Ts, 180e-6F); // Lowpass filter with tau = 180µs -> fc = 880 Hz
-static float32_t i_lowfilter_value;
+// LowPassFirstOrderFilter i_low_filter(Ts, 180e-6F); // Lowpass filter with tau = 180µs -> fc = 880 Hz
+// static float32_t i_lowfilter_value;
 
 /* Oscillations treatment with duty cycle ramping */
 static float32_t duty_cycle = 0.0F; // Applied duty cycle
@@ -810,8 +810,8 @@ void setup_routine()
         communication.sync.initMaster();
 
         /* Configures scopemimicry measured variables */
-        scope.connectChannel(modulation_signal_upper, "m_u");
         scope.connectChannel(number_of_connected_submodules_upper_arm, "N_u");
+        scope.connectChannel(number_of_connected_submodules_lower_arm, "N_l");
         scope.connectChannel(g_u_1, "g_u_1");
         scope.connectChannel(g_u_2, "g_u_2");
         scope.connectChannel(g_u_3, "g_u_3");
@@ -823,14 +823,15 @@ void setup_routine()
         scope.connectChannel(MMC_capacitor_voltage[3], "v_c_4");
         scope.connectChannel(MMC_capacitor_voltage[4], "v_c_5");
         scope.connectChannel(MMC_arm_current[0], "i_u");
-        scope.connectChannel(i_lowfilter_value, "i_u_filtered");
+        scope.connectChannel(MMC_arm_current[8], "i_l");
+        // scope.connectChannel(i_lowfilter_value, "i_u_filtered");
         scope.set_trigger(&a_trigger);
         scope.set_delay(0.0F);
         scope.start();
 
         /* Copies from general indexes list the module indexes that compose upper and lower arms, respectively */
-        memcpy(modules_indexes_upper_arm, index_list, total_number_of_modules_arm);
-        memcpy(modules_indexes_lower_arm, index_list, total_number_of_modules_arm);
+        memcpy(modules_indexes_upper_arm, index_list, total_number_of_modules_arm * sizeof(uint8_t));
+        memcpy(modules_indexes_lower_arm,&index_list[total_number_of_modules_arm], total_number_of_modules_arm * sizeof(uint8_t));
     }
     else{
         /* Defines module as follower for communication synchorinization */
@@ -982,6 +983,75 @@ void sorting_upper_arm()
 }
 
 /**
+ * @brief Capacitor Voltage Balancing (CVB) algorithm - Determine which modules connect/disconnect on upper arm.
+ *
+ * @param ...
+ * @return Gate signals for upper arm.
+ */
+void sorting_lower_arm()
+{
+    /* Reset lower modules indexes every time the function is used */
+    memcpy(modules_indexes_lower_arm, index_list, total_number_of_modules_arm);
+    
+    /* Sorts lower modules indexes according to capacitor voltage in ascending order (lower to higher voltage) */
+    uint8_t counter_loops_sorting = 0;
+    while(counter_loops_sorting < total_number_of_modules_arm + 1){ 
+            /* Bubble sorting technique - simple */
+            for(uint8_t counter = 0; counter < total_number_of_modules_arm-1; counter++)
+            {
+                if(modules_capacitor_voltages_lower_arm[counter] > modules_capacitor_voltages_lower_arm[counter + 1])
+                {
+                    float32_t temp = modules_capacitor_voltages_lower_arm[counter];
+                    modules_capacitor_voltages_lower_arm[counter] = modules_capacitor_voltages_lower_arm[counter + 1];
+                    modules_capacitor_voltages_lower_arm[counter + 1] = temp;
+                    float32_t temp2 = modules_indexes_lower_arm[counter];
+                    modules_indexes_lower_arm[counter] = modules_indexes_lower_arm[counter + 1];
+                    modules_indexes_lower_arm[counter + 1] = temp2;
+                }
+            }
+
+            counter_loops_sorting++;
+        }
+
+    /* Choses the modules to connect to the lower arm according to capacitor voltages and arm current */
+    for(uint8_t counter = 0; counter < total_number_of_modules_arm; counter++)
+        {
+            /* Positive arm current */
+            // Connect modules with smallest capacitor voltages
+            // Disconnect modules with highest capacitor voltages
+
+            if(i_lower_arm>=0)
+            {
+                uint8_t index_smallest_voltage_capacitor_lower_arm = modules_indexes_lower_arm[counter];
+                if(counter < number_of_connected_submodules_lower_arm)
+                {
+                    g_l[index_smallest_voltage_capacitor_lower_arm] = 1;
+                }
+                else{
+                    g_l[index_smallest_voltage_capacitor_lower_arm] = 0;
+                }
+            }
+
+            /* Negative arm current */
+            // Connect modules with highest capacitor voltages
+            // Disconnect modules with smallest capacitor voltages
+            if(i_lower_arm<0)
+            {
+                uint8_t higher_index = total_number_of_modules_arm-1-counter;
+                uint8_t index_highest_voltage_capacitor_lower_arm = modules_indexes_lower_arm[higher_index];
+                if(counter < number_of_connected_submodules_lower_arm)
+                {
+                    g_l[index_highest_voltage_capacitor_lower_arm] = 1;
+                }
+                else{
+                    g_l[index_highest_voltage_capacitor_lower_arm] = 0;
+                }
+            }   
+        }
+
+}
+
+/**
  * This is the code loop of the critical task
  * It is executed every 100 micro-seconds defined in the setup_software
  * function.
@@ -1010,9 +1080,10 @@ void loop_critical_task()
             number_of_connected_submodules_lower_arm = round(total_number_of_modules_arm*modulation_signal_lower);
 
             /* Updating arm current measurements and filtering */
-            i_upper_arm = MMC_arm_current[0];
+            i_upper_arm = MMC_arm_current[0]; // We get the current from module 1
+            i_lower_arm = MMC_arm_current[8]; // We get the current from module 8
             // i_lowfilter_value = i_low_filter.calculateWithReturn(i_upper_arm); // filtered current value
-            // i_upper_arm = i_lowfilter_value;i
+            // i_upper_arm = i_lowfilter_value;
 
             /* Modules choice with Capacitor Voltage Balancing (CVB) sorting */
             // Executed only when N_on changes
@@ -1020,10 +1091,13 @@ void loop_critical_task()
                 
                 /* Updating capacitor voltages measurements */
                 memcpy(modules_capacitor_voltages_upper_arm, MMC_capacitor_voltage, total_number_of_modules_arm * sizeof(float32_t));
+                memcpy(modules_capacitor_voltages_lower_arm, &MMC_capacitor_voltage[total_number_of_modules_arm], total_number_of_modules_arm * sizeof(float32_t));
 
                 /* Executes the CVB algorithm, chosing which modules to connect */
                 sorting_upper_arm(); 
+                sorting_lower_arm(); 
                 number_of_connected_submodules_upper_arm_past = number_of_connected_submodules_upper_arm;
+                number_of_connected_submodules_lower_arm_past = number_of_connected_submodules_lower_arm;
             }
 
             dataTX_mmc.sm_insertion.raw = 0U;
@@ -1033,6 +1107,7 @@ void loop_critical_task()
                 // mmc_frame_set_sm_inserted(trame_communication, module function (SM1,SM2,SM3,...), g_u associated to the module (SM1,SM2,SM3,...))
                 // g_u[counter]: true = connected, false = disconnected
                 mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM1 + counter, g_u[counter] != 0U);
+                mmc_frame_set_sm_inserted(dataTX_mmc, MMC_SM6 + counter, g_l[counter] != 0U);
             }
 
             /* Fills all other communication trame spaces */
@@ -1069,22 +1144,50 @@ void loop_critical_task()
             if (module_comand != module_command_past)
             {
                 change_state_command = true; // Set the flag to change the state
-                duty_cycle_ramp_reset();
             }
 
-            /* module_comand comes from a bit-packed insertion flag (0 or 1). */
-            const bool module_inserted = (module_comand != 0U); //If command is 1, module changes to connected state - If command is 0, module changes to disconnected state 
-
-            if (change_state_command)
+            //If command is 1, module changes to connected state
+            if (module_comand)
             {
-                change_state_command = false; // Reset the flag
+                if (change_state_command)
+                {
+                    change_state_command = false; // Reset the flag
+                }
+                shield.power.setDutyCycle(LEG1,0.95); // Duty cycle = 0.95 makes Q1 mostly closed and Q2 mostly open
+                if (!pwm_enable)
+                {
+                    pwm_enable = true;
+                    shield.power.start(LEG1);
+                }
             }
-            duty_cycle_ramp_apply(module_inserted);
-
-            if (!pwm_enable)
+            
+            //if command is 2, module changes to blocked state (not used)
+            else if (module_comand == 2)
             {
-                pwm_enable = true;
-                shield.power.start(LEG1);
+                if (change_state_command)
+                {
+                    change_state_command = false; // Reset the flag
+                }
+                if (pwm_enable == true)
+                {
+                    shield.power.stop(ALL); // Makes Q1 open and Q2 open
+                }
+                pwm_enable = false;
+            }
+
+            //if command is 0, module changes to disconnected state
+            else
+            {
+                if (change_state_command)
+                {
+                    change_state_command = false; // Reset the flag
+                }
+                shield.power.setDutyCycle(LEG1,0.0); // Duty cycle = 0 makes Q1 open and Q2 closed
+                if (!pwm_enable)
+                {
+                    pwm_enable = true;
+                    shield.power.start(LEG1);
+                }
             }
             critical_task_timer++;
         } 
