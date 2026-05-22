@@ -85,17 +85,16 @@ constexpr float32_t overcurrent_tolerance = 8.0F; //[A] Set overcurrent toleranc
 /* --------------- To be changed by user --------------------- */
 
 constexpr uint32_t UID_MMC_LEAD_BOARD = 0x002B002A;
-constexpr uint32_t UID_MMC_SM1_BOARD = 0x0031001B;
-constexpr uint32_t UID_MMC_SM2_BOARD = 0x0033004C;
+constexpr uint32_t UID_MMC_SM1_BOARD = 0x0033004C;
+constexpr uint32_t UID_MMC_SM2_BOARD = 0x0031001B;
 constexpr uint32_t UID_MMC_SM3_BOARD = 0x00330049;
-// constexpr uint32_t UID_MMC_SM4_BOARD = 0x0033004C;
 constexpr uint32_t UID_MMC_SM4_BOARD = 0x0033004B;
 constexpr uint32_t UID_MMC_SM5_BOARD = 0x00330054;
-constexpr uint32_t UID_MMC_SM6_BOARD = 0x11119999;
-constexpr uint32_t UID_MMC_SM7_BOARD = 0x1111AAA0;
-constexpr uint32_t UID_MMC_SM8_BOARD = 0x1111BBB1;
-constexpr uint32_t UID_MMC_SM9_BOARD = 0x1111CCC2;
-constexpr uint32_t UID_MMC_SM10_BOARD = 0x1111CCC3;
+constexpr uint32_t UID_MMC_SM6_BOARD = 0x0032003F;
+constexpr uint32_t UID_MMC_SM7_BOARD = 0x004E0048;
+constexpr uint32_t UID_MMC_SM8_BOARD = 0x00470026;
+constexpr uint32_t UID_MMC_SM9_BOARD = 0x004C001D;
+constexpr uint32_t UID_MMC_SM10_BOARD = 0x0047002B;
 
 /* --------- BOARD IDENTIFICATION functions ------------------ */
 static uint32_t read_board_uid()
@@ -785,6 +784,26 @@ void setup_routine()
 
     shield.sensors.enableDefaultTwistSensors();
 
+    if(module_ID == MMC_SM4)
+    {
+        shield.sensors.setConversionParametersLinear(V_HIGH,0.0297809746442154,0.0816717736324648);
+        shield.sensors.setConversionParametersLinear(V1_LOW,0.0447118735275233,-85.4652963581883);
+        shield.sensors.setConversionParametersLinear(V2_LOW,0.044724349440928,-85.9790466977148);
+        shield.sensors.setConversionParametersLinear(I1_LOW,0.00572228696154378,-12.9647582710024);
+        shield.sensors.setConversionParametersLinear(I2_LOW,0.00573807392353278,-12.98795596087);
+        shield.sensors.setConversionParametersLinear(I_HIGH,0.00505978197917605,-9.74527087864709);
+
+    }
+    if(module_ID == MMC_SM6)
+    {
+        shield.sensors.setConversionParametersLinear(V_HIGH,0.0297391039983399,0.323800681173033);
+        shield.sensors.setConversionParametersLinear(V1_LOW,0.0449253808069436,-87.8192961435065);
+        shield.sensors.setConversionParametersLinear(V2_LOW,0.0455433243875255,-87.419941665916);
+        shield.sensors.setConversionParametersLinear(I1_LOW,0.00564375060446823,-12.3417089599044);
+        shield.sensors.setConversionParametersLinear(I2_LOW,0.00473940070187198,-10.5860385444491);
+        shield.sensors.setConversionParametersLinear(I_HIGH,0.00523739527489416,-10.2030551937385);
+    }
+
     /* Disconnect electrolytical capacitors from low-side */
     shield.power.disconnectCapacitor(LEG1);
     shield.power.disconnectCapacitor(LEG2);
@@ -823,7 +842,7 @@ void setup_routine()
         scope.connectChannel(MMC_capacitor_voltage[3], "v_c_4");
         scope.connectChannel(MMC_capacitor_voltage[4], "v_c_5");
         scope.connectChannel(MMC_arm_current[0], "i_u");
-        scope.connectChannel(MMC_arm_current[8], "i_l");
+        scope.connectChannel(MMC_arm_current[5], "i_l");
         // scope.connectChannel(i_lowfilter_value, "i_u_filtered");
         scope.set_trigger(&a_trigger);
         scope.set_delay(0.0F);
@@ -1081,7 +1100,7 @@ void loop_critical_task()
 
             /* Updating arm current measurements and filtering */
             i_upper_arm = MMC_arm_current[0]; // We get the current from module 1
-            i_lower_arm = MMC_arm_current[8]; // We get the current from module 8
+            i_lower_arm = MMC_arm_current[5]; // We get the current from module 6
             // i_lowfilter_value = i_low_filter.calculateWithReturn(i_upper_arm); // filtered current value
             // i_upper_arm = i_lowfilter_value;
 
