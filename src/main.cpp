@@ -780,7 +780,7 @@ void setup_routine()
     uint32_t background_task_number =
         task.createBackground(loop_background_task);
 
-    task.createCritical(loop_critical_task, 100);
+    task.createCritical(loop_critical_task, control_task_period);
 
     shield.sensors.enableDefaultTwistSensors();
 
