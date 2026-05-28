@@ -784,7 +784,7 @@ void setup_routine()
 
     shield.sensors.enableDefaultTwistSensors();
 
-    if(module_ID == MMC_SM4)
+    if(module_ID == MMC_SM1)
     {
         shield.sensors.setConversionParametersLinear(V_HIGH,0.0297809746442154,0.0816717736324648);
         shield.sensors.setConversionParametersLinear(V1_LOW,0.0447118735275233,-85.4652963581883);
@@ -831,11 +831,11 @@ void setup_routine()
         /* Configures scopemimicry measured variables */
         scope.connectChannel(number_of_connected_submodules_upper_arm, "N_u");
         scope.connectChannel(number_of_connected_submodules_lower_arm, "N_l");
-        scope.connectChannel(g_u_1, "g_u_1");
-        scope.connectChannel(g_u_2, "g_u_2");
-        scope.connectChannel(g_u_3, "g_u_3");
-        scope.connectChannel(g_u_4, "g_u_4");
-        scope.connectChannel(g_u_5, "g_u_5");
+        scope.connectChannel(MMC_capacitor_voltage[5], "v_c_6");
+        scope.connectChannel(MMC_capacitor_voltage[6], "v_c_7");
+        scope.connectChannel(MMC_capacitor_voltage[7], "v_c_8");
+        scope.connectChannel(MMC_capacitor_voltage[8], "v_c_9");
+        scope.connectChannel(MMC_capacitor_voltage[9], "v_c_10");
         scope.connectChannel(MMC_capacitor_voltage[0], "v_c_1");
         scope.connectChannel(MMC_capacitor_voltage[1], "v_c_2");
         scope.connectChannel(MMC_capacitor_voltage[2], "v_c_3");
@@ -1099,6 +1099,8 @@ void loop_critical_task()
             number_of_connected_submodules_lower_arm = round(total_number_of_modules_arm*modulation_signal_lower);
 
             /* Updating arm current measurements and filtering */
+            // i_upper_arm = 1.0F; // We get the current from module 1
+            // i_lower_arm = 1.0F; // We get the current from module 6
             i_upper_arm = MMC_arm_current[0]; // We get the current from module 1
             i_lower_arm = MMC_arm_current[5]; // We get the current from module 6
             // i_lowfilter_value = i_low_filter.calculateWithReturn(i_upper_arm); // filtered current value
@@ -1172,7 +1174,7 @@ void loop_critical_task()
                 {
                     change_state_command = false; // Reset the flag
                 }
-                shield.power.setDutyCycle(LEG1,0.95); // Duty cycle = 0.95 makes Q1 mostly closed and Q2 mostly open
+                shield.power.setDutyCycle(LEG1,1.0); // Duty cycle = 1.0 makes Q1 mostly closed and Q2 mostly open
                 if (!pwm_enable)
                 {
                     pwm_enable = true;
