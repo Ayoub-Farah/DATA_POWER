@@ -221,6 +221,7 @@ def plot_scope_record(df: pd.DataFrame, dt_us: float, title: str) -> plt.Figure:
 
     add_step_lines(axes[3], x_axis, df, current_columns)
     axes[3].set_ylabel("Current [A]")
+    axes[3].set_ylim([-0.5, 1.5])
     axes[3].set_xlabel(f"Time [{dt_us:.3f} us/sample]")
     axes[3].set_title("Arm currents")
 

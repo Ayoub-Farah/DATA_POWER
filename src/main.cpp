@@ -579,19 +579,19 @@ uint32_t duty_cycle_counter = 0;
 uint32_t duty_cycle_step_counter = 0;
 
 /* Delay implementation */
-static constexpr uint32_t storage_window_size = 1U; // How many critical tasks of delay + 1
-static float32_t i_upper_measured_samples[storage_window_size] = {0.0F}; // Measurements samples
-static float32_t i_lower_measured_samples[storage_window_size] = {0.0F}; // Measurements samples
-static float32_t v_c_1_measured_samples[storage_window_size] = {0.0F}; // Measurements samples
-static float32_t v_c_2_measured_samples[storage_window_size] = {0.0F}; // Measurements samples
-static float32_t v_c_3_measured_samples[storage_window_size] = {0.0F}; // Measurements samples
-static float32_t v_c_4_measured_samples[storage_window_size] = {0.0F}; // Measurements samples
-static float32_t v_c_5_measured_samples[storage_window_size] = {0.0F}; // Measurements samples
-static float32_t v_c_6_measured_samples[storage_window_size] = {0.0F}; // Measurements samples
-static float32_t v_c_7_measured_samples[storage_window_size] = {0.0F}; // Measurements samples
-static float32_t v_c_8_measured_samples[storage_window_size] = {0.0F}; // Measurements samples
-static float32_t v_c_9_measured_samples[storage_window_size] = {0.0F}; // Measurements samples
-static float32_t v_c_10_measured_samples[storage_window_size] = {0.0F}; // Measurements samples
+static constexpr uint32_t storage_window_size = 11U; // How many critical tasks of delay + 1
+static float32_t i_upper_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
+static float32_t i_lower_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
+static float32_t v_c_1_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
+static float32_t v_c_2_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
+static float32_t v_c_3_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
+static float32_t v_c_4_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
+static float32_t v_c_5_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
+static float32_t v_c_6_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
+static float32_t v_c_7_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
+static float32_t v_c_8_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
+static float32_t v_c_9_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
+static float32_t v_c_10_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
 
 /* Median filter function */
 
@@ -1166,8 +1166,8 @@ void loop_critical_task()
 
 
             /* Updating arm current measurements and filtering */
-            i_upper_arm = MMC_arm_current[0]+0.45F; // We get the current from module 1
-            i_lower_arm = MMC_arm_current[5]+1.0F; // We get the current from module 6
+            i_upper_arm = MMC_arm_current[0]+0.9F; // We get the current from module 1
+            i_lower_arm = MMC_arm_current[5]+1.3F; // We get the current from module 6
             // i_lowfilter_value = i_low_filter.calculateWithReturn(i_upper_arm); // filtered current value
             // i_upper_arm = i_lowfilter_value;
             // i_lowfilter_value = i_low_filter.calculateWithReturn(i_lower_arm); // filtered current value
@@ -1178,8 +1178,8 @@ void loop_critical_task()
             if (number_of_connected_submodules_upper_arm != number_of_connected_submodules_upper_arm_past){
                 
                 /* Updating capacitor voltages measurements */
-                // memcpy(modules_capacitor_voltages_upper_arm, MMC_capacitor_voltage, total_number_of_modules_arm * sizeof(float32_t));
-                // memcpy(modules_capacitor_voltages_lower_arm, &MMC_capacitor_voltage[total_number_of_modules_arm], total_number_of_modules_arm * sizeof(float32_t));
+                memcpy(modules_capacitor_voltages_upper_arm, MMC_capacitor_voltage, total_number_of_modules_arm * sizeof(float32_t));
+                memcpy(modules_capacitor_voltages_lower_arm, &MMC_capacitor_voltage[total_number_of_modules_arm], total_number_of_modules_arm * sizeof(float32_t));
 
                 /* Executes the CVB algorithm, chosing which modules to connect */
                 sorting_upper_arm(); 
