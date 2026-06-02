@@ -593,6 +593,9 @@ static float32_t v_c_8_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0
 static float32_t v_c_9_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
 static float32_t v_c_10_measured_samples[storage_window_size] = {0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F,0.0F}; // Measurements samples
 
+static float32_t counter_delay = 0.0F; // s
+static float32_t delay = 0.0F; // s
+
 /* Median filter function */
 
 static inline void update_measurement_buffers()
@@ -1162,7 +1165,7 @@ void loop_critical_task()
             number_of_connected_submodules_lower_arm = round(total_number_of_modules_arm*modulation_signal_lower);
 
 
-            update_measurement_buffers();
+            // update_measurement_buffers();
 
 
             /* Updating arm current measurements and filtering */
@@ -1209,7 +1212,10 @@ void loop_critical_task()
             memcpy(buffer_tx, &dataTX_mmc, sizeof(dataTX_mmc));
 
             /* LEAD communicates to MODULES */
-            communication.rs485.startTransmission();
+            if (counter_delay >= delay){
+                communication.rs485.startTransmission();
+                counter_delay = 0.0F;
+            }  
 
             /* Scope data acquisition */
             g_u_1 = (float)g_u[0];  // recuperate for scope acquisition
@@ -1225,6 +1231,7 @@ void loop_critical_task()
             }
             scope_timer++;
             critical_task_timer++;
+            counter_delay += Ts;
         }
         else //CONTROL INSIDE MODULE - own switching only
         {
