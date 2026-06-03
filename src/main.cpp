@@ -76,10 +76,18 @@ constexpr uint8_t MMC_SM_LAST = MMC_SM10;
 
 static const float f0 = 50.F; //[Hz] Output frequency used to generate the sinusoidal reference for open-loop control
 static const uint8_t total_number_of_modules_arm = 5; //[-] Number of modules per arm
-constexpr float32_t Vcap_expected = 80.0F; //[V] Capacitor DC voltage expected during the test (used to set voltage measurement scale for 12 bits)
-constexpr float32_t i_expected = 10.0F; //[A] Expected current amplitude during test (used to set current measurement scale for 12 bits)
+constexpr float32_t Vcap_expected = 80.0F; //[V] Capacitor DC voltage expected during the test (used to set voltage measurement scale)
+constexpr float32_t i_expected = 10.0F; //[A] Expected current amplitude during test (used to set current measurement scale)
 constexpr float32_t overvoltage_tolerance = 80.0F; //[V] Set overvoltage tolerance (default max TWIST voltage)
 constexpr float32_t overcurrent_tolerance = 8.0F; //[A] Set overcurrent tolerance (default max TWIST current)
+
+/* Electrical data transport resolution.
+ * Change this value to 10U, 8U, etc. All boards exchanging MMC frames must
+ * be compiled with the same value.
+ */
+#ifndef MMC_ELECTRICAL_DATA_BITS
+#define MMC_ELECTRICAL_DATA_BITS 12U
+#endif
 
 /* -------------- BOARD IDENTIFICATION ----------------------- */
 /* --------------- To be changed by user --------------------- */
@@ -137,26 +145,40 @@ static uint8_t detect_module_id()
 
 /* -------------- DATA PACKING HELPERS ----------------------- */
 
-constexpr float32_t Cap_voltage_SCALE = Vcap_expected*2; //[V] Scale to transform voltage measurements sent to 1 byte (256 values)
-constexpr float32_t Arm_current_SCALE = i_expected*2; //[A] Scale to transform current measurements sent to 1 byte (256 values)
-constexpr float32_t Arm_current_OFFSET = i_expected; //[A] Offset to transform current measurements sent to 1 byte, used to allow positive and negative values with expected amplitude
+constexpr uint32_t MMC_ELECTRICAL_DATA_RESOLUTION_BITS = MMC_ELECTRICAL_DATA_BITS;
+static_assert(MMC_ELECTRICAL_DATA_RESOLUTION_BITS >= 1U,
+              "MMC_ELECTRICAL_DATA_BITS must be at least 1");
+static_assert(MMC_ELECTRICAL_DATA_RESOLUTION_BITS <= 16U,
+              "MMC_ELECTRICAL_DATA_BITS must fit in a uint16_t field");
+
+constexpr uint32_t MMC_ELECTRICAL_DATA_LEVELS =
+    (1UL << MMC_ELECTRICAL_DATA_RESOLUTION_BITS);
+constexpr uint16_t MMC_ELECTRICAL_DATA_MAX =
+    static_cast<uint16_t>(MMC_ELECTRICAL_DATA_LEVELS - 1UL);
+constexpr float32_t MMC_ELECTRICAL_DATA_MAX_FLOAT =
+    static_cast<float32_t>(MMC_ELECTRICAL_DATA_MAX);
+
+constexpr float32_t Cap_voltage_SCALE = Vcap_expected * 2; //[V] Scale to transform voltage measurements before transport encoding
+constexpr float32_t Arm_current_SCALE = i_expected * 2; //[A] Scale to transform current measurements before transport encoding
+constexpr float32_t Arm_current_OFFSET = i_expected; //[A] Offset used to allow positive and negative current values with expected amplitude
 
 /**
- * @brief Encode an capacitor voltage into the 12-bit transport format.
+ * @brief Encode a capacitor voltage into the configured transport format.
  *
- * @param current Physical capacitor voltage in volts.
- * @return 12-bit encoded voltage suitable for MMC frames.
+ * @param voltage Physical capacitor voltage in volts.
+ * @return Encoded voltage suitable for MMC frames.
  */
 static inline uint16_t mmc_encode_voltage(float32_t voltage)
 {
-    int32_t raw = static_cast<int32_t>((voltage * 4095.0F) / Cap_voltage_SCALE);
+    int32_t raw = static_cast<int32_t>(
+        (voltage * MMC_ELECTRICAL_DATA_MAX_FLOAT) / Cap_voltage_SCALE);
     if (raw < 0)
     {
         raw = 0;
     }
-    if (raw > 0x0FFF)
+    if (raw > static_cast<int32_t>(MMC_ELECTRICAL_DATA_MAX))
     {
-        raw = 0x0FFF;
+        raw = static_cast<int32_t>(MMC_ELECTRICAL_DATA_MAX);
     }
     return static_cast<uint16_t>(raw);
 }
@@ -164,31 +186,34 @@ static inline uint16_t mmc_encode_voltage(float32_t voltage)
 /**
  * @brief Decode a raw capacitor voltage value from an MMC frame.
  *
- * @param raw 12-bit encoded capacitor voltage.
+ * @param raw Encoded capacitor voltage.
  * @return Physical capacitor voltage in volts.
  */
 static inline float32_t mmc_decode_voltage(uint16_t raw)
 {
-    return (Cap_voltage_SCALE * static_cast<float32_t>(raw & 0x0FFF)) / 4095.0F;
+    return (Cap_voltage_SCALE *
+            static_cast<float32_t>(raw & MMC_ELECTRICAL_DATA_MAX)) /
+           MMC_ELECTRICAL_DATA_MAX_FLOAT;
 }
 
 /**
- * @brief Encode an arm current into the 12-bit transport format.
+ * @brief Encode an arm current into the configured transport format.
  *
  * @param current Physical arm current in amperes.
- * @return 12-bit encoded current suitable for MMC frames.
+ * @return Encoded current suitable for MMC frames.
  */
 static inline uint16_t mmc_encode_current(float32_t current)
 {
     float32_t shifted = current + Arm_current_OFFSET;
-    int32_t raw = static_cast<int32_t>((shifted * 4095.0F) / Arm_current_SCALE);
+    int32_t raw = static_cast<int32_t>(
+        (shifted * MMC_ELECTRICAL_DATA_MAX_FLOAT) / Arm_current_SCALE);
     if (raw < 0)
     {
         raw = 0;
     }
-    if (raw > 0x0FFF)
+    if (raw > static_cast<int32_t>(MMC_ELECTRICAL_DATA_MAX))
     {
-        raw = 0x0FFF;
+        raw = static_cast<int32_t>(MMC_ELECTRICAL_DATA_MAX);
     }
     return static_cast<uint16_t>(raw);
 }
@@ -196,12 +221,15 @@ static inline uint16_t mmc_encode_current(float32_t current)
 /**
  * @brief Decode a raw arm current value from an MMC frame.
  *
- * @param raw 12-bit encoded arm current.
+ * @param raw Encoded arm current.
  * @return Physical arm current in amperes.
  */
 static inline float32_t mmc_decode_current(uint16_t raw)
 {
-    return ((Arm_current_SCALE * static_cast<float32_t>(raw & 0x0FFF)) / 4095.0F) - Arm_current_OFFSET;
+    return ((Arm_current_SCALE *
+             static_cast<float32_t>(raw & MMC_ELECTRICAL_DATA_MAX)) /
+            MMC_ELECTRICAL_DATA_MAX_FLOAT) -
+           Arm_current_OFFSET;
 }
 
 
@@ -240,8 +268,8 @@ constexpr uint32_t MMC_STATUS_UPPER_ARM_MASK = (1UL << MMC_STATUS_CODE_BITS);
  *
  * Structure overview:
  * - `sm_insertion`: bit-packed insertion flags for each submodule.
- * - `capacitor_voltage_raw`: 12-bit encoded capacitor voltage.
- * - `arm_current_raw`: 12-bit encoded arm current.
+ * - `capacitor_voltage_raw`: configured-resolution encoded capacitor voltage.
+ * - `arm_current_raw`: configured-resolution encoded arm current.
  * - `status`: 3-bit global status level plus the arm selection flag.
  * - `sm_id`: identifier of the sender (lead or submodule index).
  */
@@ -264,8 +292,8 @@ struct MMC_frame
             uint16_t sm10_inserted : 1;
         } bits;
     } sm_insertion;
-    uint16_t capacitor_voltage_raw : 12;
-    uint16_t arm_current_raw : 12;
+    uint16_t capacitor_voltage_raw : MMC_ELECTRICAL_DATA_RESOLUTION_BITS;
+    uint16_t arm_current_raw : MMC_ELECTRICAL_DATA_RESOLUTION_BITS;
     union
     {
         uint8_t raw;
@@ -284,44 +312,44 @@ typedef MMC_frame MMC_frame_t;
  * @brief Store an encoded capacitor voltage value inside an MMC frame.
  *
  * @param frame Frame that will carry the voltage information.
- * @param raw 12-bit raw voltage to write into the frame.
+ * @param raw Raw voltage to write into the frame.
  */
 static inline void mmc_frame_set_voltage_raw(MMC_frame_t &frame, uint16_t raw)
 {
-    frame.capacitor_voltage_raw = static_cast<uint16_t>(raw & 0x0FFFU);
+    frame.capacitor_voltage_raw = static_cast<uint16_t>(raw & MMC_ELECTRICAL_DATA_MAX);
 }
 
 /**
  * @brief Get the encoded capacitor voltage contained in an MMC frame.
  *
  * @param frame Frame that carries the voltage information.
- * @return 12-bit raw capacitor voltage.
+ * @return Raw capacitor voltage.
  */
 static inline uint16_t mmc_frame_get_voltage_raw(const MMC_frame_t &frame)
 {
-    return static_cast<uint16_t>(frame.capacitor_voltage_raw & 0x0FFFU);
+    return static_cast<uint16_t>(frame.capacitor_voltage_raw & MMC_ELECTRICAL_DATA_MAX);
 }
 
 /**
  * @brief Store an encoded arm current value inside an MMC frame.
  *
  * @param frame Frame that will carry the current information.
- * @param raw 12-bit raw current to write into the frame.
+ * @param raw Raw current to write into the frame.
  */
 static inline void mmc_frame_set_current_raw(MMC_frame_t &frame, uint16_t raw)
 {
-    frame.arm_current_raw = static_cast<uint16_t>(raw & 0x0FFFU);
+    frame.arm_current_raw = static_cast<uint16_t>(raw & MMC_ELECTRICAL_DATA_MAX);
 }
 
 /**
  * @brief Get the encoded arm current contained in an MMC frame.
  *
  * @param frame Frame that carries the current information.
- * @return 12-bit raw arm current.
+ * @return Raw arm current.
  */
 static inline uint16_t mmc_frame_get_current_raw(const MMC_frame_t &frame)
 {
-    return static_cast<uint16_t>(frame.arm_current_raw & 0x0FFFU);
+    return static_cast<uint16_t>(frame.arm_current_raw & MMC_ELECTRICAL_DATA_MAX);
 }
 
 /**
